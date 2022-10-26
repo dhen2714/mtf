@@ -33,20 +33,35 @@ def get_corner_pixels(canny_image):
     canny image is an image where edge detection has been performed.
     Labels output as most left, most right, most top and most bottom.
     """
-    edge_idx = np.where(canny_image!=0)
+    contours, hier = cv2.findContours(canny_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    max_len = 0
+    # Assumes the biggest contour is the MTF tool.
+    for i, c in enumerate(contours):
+        contour_length = len(c)
+        if contour_length > max_len:
+            max_len = contour_length
+            contour_ind = i
+     
+    mtfedge = contours[contour_ind]
+    # Define rectangle around the MTF edge.
+    # rect returns x,y,w,h where x,y are the column, row indices of top left corner
+    # w, h are the number of columns and rows, respectively
+    x, y, w, h = cv2.boundingRect(mtfedge)
+    bounding_roi = canny_image[y:y+h, x:x+w]
+    edge_idx = np.where(bounding_roi!=0)
     row_edge, col_edge = edge_idx
     
     # Find the corners of the edge rectangle
     left_idx = row_edge[np.where(col_edge==col_edge.min())][0]
     right_idx = row_edge[np.where(col_edge==col_edge.max())][-1]
     top_idx = col_edge[np.where(row_edge==row_edge.min())][0]
-    bottom_idx = col_edge[np.where(row_edge==row_edge.max())][0]
+    bottom_idx = col_edge[np.where(row_edge==row_edge.max())][-1]
     # Corners are labelled in terms of the most extreme position
-    most_left = np.array((left_idx, col_edge.min()))
-    most_right = np.array((right_idx, col_edge.max()))
-    most_top = np.array((row_edge.min(), top_idx))
-    most_bottom = np.array((row_edge.max(), bottom_idx))
-    
+    t = np.array((y, x))
+    most_left = np.array((left_idx, col_edge.min())) + t
+    most_right = np.array((right_idx, col_edge.max())) + t
+    most_top = np.array((row_edge.min(), top_idx)) + t
+    most_bottom = np.array((row_edge.max(), bottom_idx)) + t
     return most_left, most_right, most_top, most_bottom
 
 
@@ -226,7 +241,7 @@ def get_mtfs(dcm_path, sample_period):
     dcm = pydicom.dcmread(dcm_path)
     # The collimator is visible on the edge of Hologic images, remove.
     # Rescale pixel values for conversion to 8 bit
-    img = rescale_pixels(dcm.pixel_array[12:-12, :])
+    img = rescale_pixels(dcm.pixel_array[20:-20, :])
     img8bit = img.astype(np.uint8)
     # Perform edge detection
     imgedge = cv2.Canny(img8bit, 100, 200)
@@ -248,7 +263,8 @@ def get_mtfs(dcm_path, sample_period):
 
         edge_roi = rois[edge_pos]
         edge_roi_canny = rois_canny[edge_pos]
-        esf, sample_positions = get_esf(edge_roi, edge_roi_canny, edge_dir, 10)
+        esf, sample_positions = get_esf(edge_roi, edge_roi_canny, edge_dir)
+        esf = monotone_esf(esf, sample_positions) # Apply monotonicity constraint
         MTF, freqs = esf2mtf(esf, sample_period/10)
 
         mtfs[edge_pos] = (freqs, MTF)
