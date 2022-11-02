@@ -27,13 +27,20 @@ def calculate_distance(v1, v2):
     return np.sqrt(np.sum((v1 - v2)**2))
 
 
-def get_corner_pixels(canny_image):
+def get_roi_bounds(canny):
     """
-    Finds pixel values of the corners of the MTF edge.
-    canny image is an image where edge detection has been performed.
-    Labels output as most left, most right, most top and most bottom.
+    Get the indicies for the row and column bounds for edge ROIs.
+
+    Returns a dictionary with index entries for each edge. Each entry is a 
+    a tuple of tuples, with the first tuple being the first and last row
+    indices for the ROI, and the second tuple being the first and last
+    column indices for the ROI. For example:
+    {
+        'left': ((row_start, row_end), (col_start, col_end)),
+        'right': ((row_start, row_end), (col_start, col_end))
+    }
     """
-    contours, hier = cv2.findContours(canny_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hier = cv2.findContours(canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     max_len = 0
     # Assumes the biggest contour is the MTF tool.
     for i, c in enumerate(contours):
@@ -47,96 +54,71 @@ def get_corner_pixels(canny_image):
     # rect returns x,y,w,h where x,y are the column, row indices of top left corner
     # w, h are the number of columns and rows, respectively
     x, y, w, h = cv2.boundingRect(mtfedge)
-    bounding_roi = canny_image[y:y+h, x:x+w]
-    edge_idx = np.where(bounding_roi!=0)
-    row_edge, col_edge = edge_idx
-    
-    # Find the corners of the edge rectangle
-    left_idx = row_edge[np.where(col_edge==col_edge.min())][0]
-    right_idx = row_edge[np.where(col_edge==col_edge.max())][-1]
-    top_idx = col_edge[np.where(row_edge==row_edge.min())][0]
-    bottom_idx = col_edge[np.where(row_edge==row_edge.max())][-1]
-    # Corners are labelled in terms of the most extreme position
-    t = np.array((y, x))
-    most_left = np.array((left_idx, col_edge.min())) + t
-    most_right = np.array((right_idx, col_edge.max())) + t
-    most_top = np.array((row_edge.min(), top_idx)) + t
-    most_bottom = np.array((row_edge.max(), bottom_idx)) + t
-    return most_left, most_right, most_top, most_bottom
-
-
-def label_corners(most_left, most_right, most_top, most_bottom):
-    """
-    Returns a corners dictionary, with the pixel coordinates of top_left, 
-    top_right, bottom_left, bottom_right corners.
-    """
-    corners = {}
-    # Determine whether the MTF tool is tilted towards the left or right from the vertical image axis.    
-    d1 = calculate_distance(most_left, most_top)
-    d2 = calculate_distance(most_right, most_top)
-
-    if d1 < d2:
-        # Tilted towards the left
-        corners['top_left'] = most_left
-        corners['top_right'] = most_top
-        corners['bottom_left'] = most_bottom
-        corners['bottom_right'] = most_right
-    elif d1 > d2:
-        # Tilted towards the right
-        corners['top_left'] = most_top
-        corners['top_right'] = most_right
-        corners['bottom_left'] = most_left
-        corners['bottom_right'] = most_bottom
-
-    return corners
-
-
-def get_roi_bounds(corners):
-    """
-    Get row and columns bounds for ROIs around each edge of the tool.
-    """
-    # Get centre pixel coordinates of each edge
-    left_centre = (corners['top_left'] + corners['bottom_left'])/2
-    right_centre = (corners['top_right'] + corners['bottom_right'])/2
-    top_centre = (corners['top_left'] + corners['top_right'])/2
-    bottom_centre = (corners['bottom_left'] + corners['bottom_right'])/2
-    
-    tool_height = np.min(
-        (calculate_distance(corners['top_left'], corners['bottom_left']),
-        calculate_distance(corners['top_right'], corners['bottom_right']))
-    )
-    
-    tool_width = np.min(
-        (calculate_distance(corners['top_left'], corners['top_right']),
-        calculate_distance(corners['bottom_left'], corners['bottom_right']))
-    )
-    
+    # Get midpoint for each side
+    contour_midpoints = {
+        'left': np.array([y, x]) + np.array([int(h/2), 0]),
+        'right': np.array([y, x]) + np.array([int(h/2), w]),
+        'top': np.array([y, x]) + np.array([0, int(w/2)]),
+        'bottom': np.array([y, x]) + np.array([h, int(w/2)])
+    }
+    # If the edge is not found within search_length, assumes no edge.
+    search_length = 100
+    contour_dirs = {
+        'left': search_length,
+        'right': -search_length,
+        'top': -search_length,
+        'bottom': search_length
+    }
     # Define heights for vertical and horizontal edge rois
-    height_ver = 0.9*tool_height
-    height_hor = 0.9*tool_height
+    height_ver = 0.8*h
+    height_hor = 0.8*h
     
     # Define widths for vertical and horizontal edge rois
-    width_ver = 1.8*tool_width
-    width_hor = 0.9*tool_width
+    width_ver = 1.6*w
+    width_hor = 0.8*w
+    
+    roi_bounds = {}
+    
+    for key, val in contour_midpoints.items():
+        if key == 'left':
+            search_slice = canny[val[0], val[1]:val[1]+search_length]
+            local_idx = np.where(search_slice!=0)[0]
+            if local_idx.size > 0:
+                roi_midpoint = np.array([val[0], val[1]+local_idx[0]])
+                roi_bounds[key] = (
+                    (int(roi_midpoint[0]-height_ver/2), int(roi_midpoint[0]+height_ver/2)),
+                    (int(roi_midpoint[1]-width_ver/2), int(roi_midpoint[1]+width_ver/2))
+                )
+            
+        elif key == 'right':
+            search_slice = canny[val[0], val[1]-search_length:val[1]]
+            local_idx = np.where(search_slice!=0)[0]
+            if local_idx.size > 0:
+                roi_midpoint = np.array([val[0], val[1]-search_length+local_idx[0]])
+                roi_bounds[key] = (
+                    (int(roi_midpoint[0]-height_ver/2), int(roi_midpoint[0]+height_ver/2)),
+                    (int(roi_midpoint[1]-width_ver/2), int(roi_midpoint[1]+width_ver/2))
+                )
 
-    roi_bounds = {
-        'left': (
-            (int(left_centre[0]-height_ver/2), int(left_centre[0]+height_ver/2)),
-            (int(left_centre[1]-width_ver/2), int(left_centre[1]+width_ver/2))
-        ),
-        'right': (
-            (int(right_centre[0]-height_ver/2), int(right_centre[0]+height_ver/2)),
-            (int(right_centre[1]-width_ver/2), int(right_centre[1]+width_ver/2))
-        ),
-        'top': (
-            (int(top_centre[0]-height_hor/2), int(top_centre[0]+height_hor/2)),
-            (int(top_centre[1]-width_hor/2), int(top_centre[1]+width_hor/2))
-        ),
-        'bottom': (
-            (int(bottom_centre[0]-height_hor/2), int(bottom_centre[0]+height_hor/2)),
-            (int(bottom_centre[1]-width_hor/2), int(bottom_centre[1]+width_hor/2))
-        )
-    }
+        elif key == 'top':
+            search_slice = canny[val[0]:val[0]+search_length, val[1]]
+            local_idx = np.where(search_slice!=0)[0]
+            if local_idx.size > 0:
+                roi_midpoint = np.array([val[0]+local_idx[0], val[1]])
+                roi_bounds[key] = (
+                    (int(roi_midpoint[0]-height_hor/2), int(roi_midpoint[0]+height_hor/2)),
+                    (int(roi_midpoint[1]-width_hor/2), int(roi_midpoint[1]+width_hor/2))
+                )
+                
+        elif key == 'bottom':
+            search_slice = canny[val[0]-search_length:val[0], val[1]]
+            local_idx = np.where(search_slice!=0)[0]
+            if local_idx.size > 0:
+                roi_midpoint = np.array([val[0]-search_length+local_idx[0], val[1]])
+                roi_bounds[key] = (
+                    (int(roi_midpoint[0]-height_hor/2), int(roi_midpoint[0]+height_hor/2)),
+                    (int(roi_midpoint[1]-width_hor/2), int(roi_midpoint[1]+width_hor/2))
+                )
 
     return roi_bounds
 
@@ -153,6 +135,35 @@ def get_rois(image, roi_bounds):
         row_vals, col_vals = val
         rois[key] = image[row_vals[0]:row_vals[1], col_vals[0]:col_vals[1]]
     return rois
+
+
+def fix_rois(roi_bounds, row_lim, col_lim):
+    """
+    Resize ROIS to be symmetrical if they are too close to the edge of 
+    the image.
+    """
+    fixed_rois = {}
+    for roi_name, roi in roi_bounds.items():
+        row_bounds, col_bounds = roi
+        new_row_bounds = row_bounds
+        new_col_bounds = col_bounds
+        
+        if row_bounds[0] < 0:
+            new_row_bounds = (0, row_bounds[1]+row_bounds[0])
+        if row_bounds[1] >= row_lim:
+            diff = row_bounds[1] - row_lim
+            new_row_bounds = (row_bounds[0]+diff, row_lim-1)
+            
+        if col_bounds[0] < 0:
+            new_col_bounds = (0, col_bounds[1]+col_bounds[0])
+        if col_bounds[1] >= col_lim:
+            diff = col_bounds[1] - col_lim
+            new_col_bounds = (col_bounds[0]+diff, col_lim-1)
+            
+        new_bounds = (new_row_bounds, new_col_bounds)
+
+        fixed_rois[roi_name] = new_bounds
+    return fixed_rois
 
 
 def get_esf(roi, roi_canny=None, edge_direction='vertical', 
@@ -234,27 +245,42 @@ def monotone_esf(esf, sample_positions):
     return esf_new
 
 
+def crop_image(dcm):
+    """
+    Return cropped pixel array from DICOM Hologic dataset.
+    If mag, returns cropped image without paddle.
+    If conventional, crops collimator blades.
+    """
+    # Get value for (0018, 11a4) Paddle description
+    paddleval = dcm[0x0018,0x11a4].value
+    array = dcm.pixel_array
+    if paddleval == '10CM MAG':
+        rowlims = (450, 2800)
+    else:
+        rowlims = (20, -20)
+    return array[rowlims[0]:rowlims[1],:]
+
+
 def get_mtfs(dcm_path, sample_period):
     """
     Reads image, performs edge detection and returns MTF for all edges of tool.
     """
     dcm = pydicom.dcmread(dcm_path)
     # The collimator is visible on the edge of Hologic images, remove.
+    cropped = crop_image(dcm)
     # Rescale pixel values for conversion to 8 bit
-    img = rescale_pixels(dcm.pixel_array[20:-20, :])
+    img = rescale_pixels(cropped)
     img8bit = img.astype(np.uint8)
     # Perform edge detection
     imgedge = cv2.Canny(img8bit, 100, 200)
-    # Get tool edge corners and label them.
-    most_left, most_right, most_top, most_bottom = get_corner_pixels(imgedge)
-    corners = label_corners( most_left, most_right, most_top, most_bottom)
     # Get ROIs
-    roi_bounds = get_roi_bounds(corners)
+    roi_bounds = get_roi_bounds(imgedge)
+    roi_bounds = fix_rois(roi_bounds, *img.shape)
     rois = get_rois(img, roi_bounds)
     rois_canny = get_rois(imgedge, roi_bounds)
 
     mtfs = {}
-    for edge_pos in ('left', 'right', 'top', 'bottom'):
+    for edge_pos in rois:
 
         if edge_pos in ('left', 'right'):
             edge_dir = 'vertical'
