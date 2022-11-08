@@ -267,6 +267,7 @@ def get_mtfs(dcm_path, sample_period):
     """
     dcm = pydicom.dcmread(dcm_path)
     # The collimator is visible on the edge of Hologic images, remove.
+    # For magnification images, remove the paddle.
     cropped = crop_image(dcm)
     # Rescale pixel values for conversion to 8 bit
     img = rescale_pixels(cropped)
