@@ -245,20 +245,52 @@ def monotone_esf(esf, sample_positions):
     return esf_new
 
 
-def crop_image(dcm):
+def preprocess_dcm(dcm):
     """
-    Return cropped pixel array from DICOM Hologic dataset.
-    If mag, returns cropped image without paddle.
-    If conventional, crops collimator blades.
+    Preprocesses DICOM image, returning a pixel array for MTF calculation.
     """
-    # Get value for (0018, 11a4) Paddle description
-    paddleval = dcm[0x0018,0x11a4].value
-    array = dcm.pixel_array
-    if paddleval == '10CM MAG':
-        rowlims = (450, 2800)
+    manufacturer_name = dcm[0x0008, 0x0070].value.lower()
+    if 'hologic' in manufacturer_name:
+        arr = preprocess_hologic(dcm)
+    elif 'ge' in manufacturer_name:
+        arr = preprocess_ge(dcm)
+    return arr
+
+
+def autofocus_tomo(tomo_recon):
+    """
+    Find the tomosynthesis slice in which the MTF edge is in focus.
+    Uses variance of Laplacian as a metric for focus.
+    Input: 3D tomosynthesis reconstruction pixel array.
+    Output: 2D pixel array representation of in-focus slice.
+    """
+    max_lapvar_slice = 0
+    max_lapvar = 0
+    for i, tomo_slice in enumerate(tomo_recon):
+        lapvar = cv2.Laplacian(tomo_slice, cv2.CV_64F).var()
+        if lapvar > max_lapvar:
+            max_lapvar_slice = i
+            max_lapvar = lapvar
+    return tomo_recon[max_lapvar_slice, ...]    
+
+
+def preprocess_hologic(dcm):
+    img_type_header = dcm[0x0008, 0x0008].value
+    if 'TOMOSYNTHESIS' in img_type_header:
+        arr = autofocus_tomo(dcm.pixel_array)
     else:
-        rowlims = (20, -20)
-    return array[rowlims[0]:rowlims[1],:]
+        # Get value for (0018, 11a4) Paddle description
+        paddleval = dcm[0x0018,0x11a4].value
+        arr = dcm.pixel_array
+        if paddleval == '10CM MAG':
+            rowlims = (450, 2800)
+        else:
+            rowlims = (20, -20)
+        arr = arr[rowlims[0]:rowlims[1],:]
+    return arr
+
+def preprocess_ge(dcm):
+    return dcm.pixel_array
 
 
 def get_mtfs(dcm_path, sample_period):
@@ -268,7 +300,7 @@ def get_mtfs(dcm_path, sample_period):
     dcm = pydicom.dcmread(dcm_path)
     # The collimator is visible on the edge of Hologic images, remove.
     # For magnification images, remove the paddle.
-    cropped = crop_image(dcm)
+    cropped = preprocess_dcm(dcm)
     # Rescale pixel values for conversion to 8 bit
     img = rescale_pixels(cropped)
     img8bit = img.astype(np.uint8)
