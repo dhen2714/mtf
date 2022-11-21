@@ -289,6 +289,7 @@ def preprocess_hologic(dcm):
         arr = arr[rowlims[0]:rowlims[1],:]
     return arr
 
+
 def preprocess_ge(dcm):
     return dcm.pixel_array
 
