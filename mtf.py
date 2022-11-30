@@ -7,8 +7,6 @@ import pydicom
 from scipy.fft import fft, fftfreq
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
-from sklearn.linear_model import LinearRegression
-from sklearn.utils import check_random_state
 
 
 def rescale_pixels(img, new_max=255, new_min=0):
@@ -75,7 +73,7 @@ def get_roi_bounds(canny):
     
     # Define widths for vertical and horizontal edge rois
     width_ver = 1.6*w
-    width_hor = 0.8*w
+    width_hor = 0.6*w
     
     roi_bounds = {}
     
@@ -177,7 +175,7 @@ def get_esf(roi, roi_canny=None, edge_direction='vertical',
     # Detect edge if detected edge roi not provided.
     if roi_canny is None:
         roi_canny = rescale_pixels(roi).astype(np.uint8)
-        roi_canny = cv2.Canny(roi_canny, 100, 200)
+        roi_canny = cv2.Canny(roi_canny, 100, 300)
 
     if edge_direction == 'vertical':
         xn, yn = roi.shape
@@ -307,7 +305,7 @@ def get_mtfs(dcm_path, sample_period):
     img = rescale_pixels(cropped)
     img8bit = img.astype(np.uint8)
     # Perform edge detection
-    imgedge = cv2.Canny(img8bit, 100, 200)
+    imgedge = cv2.Canny(img8bit, 100, 300)
     # Get ROIs
     roi_bounds = get_roi_bounds(imgedge)
     roi_bounds = fix_rois(roi_bounds, *img.shape)
@@ -331,6 +329,39 @@ def get_mtfs(dcm_path, sample_period):
         mtfs[edge_pos] = (freqs, MTF)
 
     return mtfs
+
+
+def get_labelled_rois(image):
+    """
+    Returns dictionary of labelled rois.
+    """
+    image = rescale_pixels(image)
+    image_edge = cv2.Canny(image.astype(np.uint8), 100, 300)
+    # Get ROIs
+    roi_bounds = get_roi_bounds(image_edge)
+    roi_bounds = fix_rois(roi_bounds, *image.shape)
+    rois = get_rois(image, roi_bounds)
+    rois_canny = get_rois(image_edge, roi_bounds)
+    return rois, rois_canny
+
+
+def calculate_mtf(roi, sample_period, roi_canny=None, edge_dir='vertical', 
+    sample_number=None):
+    """
+    Calculates MTF given ROI containing an edge.
+    """
+    if roi_canny is None:
+        roi_canny = rescale_pixels(roi).astype(np.uint8)
+        roi_canny = cv2.Canny(roi_canny, 100, 300)
+
+    esf, sample_positions = get_esf(roi, roi_canny, edge_dir)
+    esf = monotone_esf(esf, sample_positions) # Apply monotonicity constraint
+    MTF, freqs = esf2mtf(esf, sample_period/10)
+
+    if not sample_number:
+        sample_number = int(len(MTF)/2)
+    
+    return freqs[:sample_number], MTF[:sample_number]
 
     
         
