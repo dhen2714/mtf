@@ -68,7 +68,7 @@ def get_roi_bounds(canny):
         'bottom': search_length
     }
     # Define heights for vertical and horizontal edge rois
-    height_ver = 0.8*h
+    height_ver = 0.7*h
     height_hor = 0.8*h
     
     # Define widths for vertical and horizontal edge rois

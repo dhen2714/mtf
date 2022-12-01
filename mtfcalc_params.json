@@ -1,0 +1,20 @@
+{
+    "use_default_parameters": true,
+    "comment": "Custom parameters will be ignored if above is true. Set to false to use custom parameters",
+    "hologic_spacing": {
+        "tomo": 0.108,
+        "mag": 0.0349,
+        "conventional": 0.0635
+    },
+    "ge_spacing": {
+        "conventional": 0.1
+    },
+    "process_edge": "default",
+    "process_edge_comment": "process_edge should be either 'default' or 'all'",
+    "write_mode": "template",
+    "write_mode_comment": "write_mode should either be 'template' or 'free'",
+    "overwrite_cells": false,
+    "overwrite_cells_comment": "overwrite data in Excel true/false",
+    "excel_write_sheet": "Resolution",
+    "excel_write_sheet_comment": "change to '_active' to write to active sheet"
+}

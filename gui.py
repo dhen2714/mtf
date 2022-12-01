@@ -4,57 +4,13 @@ import tkinter as tk
 from tkinter import ttk
 import tkinterdnd2 as tkdnd2
 from tkinterdnd2 import DND_FILES
-import xlwings as xw
 import pydicom
 from pywintypes import com_error
 from dicom_preprocess import preprocess_dicom
 from mtf import get_labelled_rois, calculate_mtf
-from application_parameters import get_sample_spacing, excel_write_cell
+from application_parameters import get_sample_spacing, excel_write_cell, get_edge_locations, get_excel_write_sheet, get_overwrite_cells
 import numpy as np
-
-
-def excelkey2ind(excelkey):
-    """
-    Converts excel key in <letter, number> format to (row number, column number).
-    E.g.
-    excelkey2ind('E3') = (3, 5)
-    """
-    reg = re.search('\D+', excelkey)
-    colxl, rowxl = excelkey[reg.start():reg.end()], excelkey[reg.end():]
-    
-    numletters = len(colxl)
-    colnum = 0
-    for i, letter in enumerate(colxl):
-        power = numletters - i - 1
-        colnum += (ord(letter.lower()) - 96)*(26**power)
-        
-    rownum = int(rowxl)
-    return rownum, colnum
-
-
-def write_values(xw_sheet, array, cell_key, overwrite=False):
-    """
-    Write values from array to Excel sheet.
-    The cell_key is an Excel column-row key.
-    Assumes array is 2D. The array will be written to the sheet with cell_key
-    being the first value in array, or the top-left corner value.
-    """
-    array_dims = array.ndim
-    if array_dims == 2:
-        array_shape = array.shape
-    else:
-        array_shape = (len(array), 1)
-        
-    startrc = excelkey2ind(cell_key)
-    endrow, endcol = (startrc[0] + array_shape[0] - 1), (startrc[1] + array_shape[1] - 1)
-    values = np.array(xw_sheet.range(startrc, (endrow, endcol)).value)
-    
-    if values.any() and not overwrite:
-        raise Exception('Values detected in cells.')
-    else:
-        xw_sheet.range(startrc, (endrow, endcol)).value = array
-    
-    return
+from excel_write import excelkey2ind, write_values, get_active_app
 
 
 class AppMTF(ttk.Frame):
@@ -76,7 +32,7 @@ class AppMTF(ttk.Frame):
         self.excel_label = ttk.Label(self, text='Open excel workbook:')
         self.excel_label.grid(column=0, row=3)
 
-        self.excel_app = xw.apps.active
+        self.excel_app = get_active_app()
         self.workbook_options = ['No workbook selected.']
         if self.excel_app:
             [self.workbook_options.append(book.name) for book in self.excel_app.books]
@@ -93,7 +49,7 @@ class AppMTF(ttk.Frame):
 
     def update_workbook_options(self):
         self.workbook_options = ['No workbook selected.']
-        self.excel_app = xw.apps.active
+        self.excel_app = get_active_app()
         if self.excel_app:
             try:
                 [self.workbook_options.append(book.name) for book in self.excel_app.books]
@@ -140,25 +96,36 @@ class AppMTF(ttk.Frame):
         rois, rois_canny = get_labelled_rois(dicom_data['pixel_array'])
 
         sample_number = 105 # number of MTF samples to take
-        edges = ['left', 'top']
+        edges = get_edge_locations(rois)
         for edge_position in edges:
+
             if edge_position in ('left', 'right'):
                 edge_dir = 'vertical'
             elif edge_position in ('top', 'bottom'):
                 edge_dir = 'horizontal'
-            edge_roi = rois[edge_position]
-            edge_roi_canny = rois_canny[edge_position]
-            sample_spacing = get_sample_spacing(manufacturer, mode)
-            f, MTF = calculate_mtf(edge_roi, sample_spacing, edge_roi_canny,
-                edge_dir, sample_number)
 
-            excel_cell = excel_write_cell(mode, edge_dir)
-            write_array = np.array([f, MTF]).T
+            if edge_position in rois:
+                edge_roi = rois[edge_position]
+                edge_roi_canny = rois_canny[edge_position]
+                sample_spacing = get_sample_spacing(manufacturer, mode)
+                f, MTF = calculate_mtf(edge_roi, sample_spacing, edge_roi_canny,
+                    edge_dir, sample_number)
+
+                excel_cell = excel_write_cell(mode, edge_dir)
+                write_array = np.array([f, MTF]).T
+
+            else:
+                excel_cell = excel_write_cell(mode, edge_dir)
+                # Write empty array if intended edge to process not found.
+                write_array = np.empty((sample_number, 2))
+                write_array[:] = np.nan
 
             try:
                 book_name = self.open_excel_var.get()
-                sheet = xw.apps.active.books[book_name].sheets['Resolution']
-                write_values(sheet, write_array, excel_cell)
+                write_sheet = get_excel_write_sheet()
+                overwrite = get_overwrite_cells()
+                sheet = self.excel_app.books[book_name].sheets[write_sheet]
+                write_values(sheet, write_array, excel_cell, overwrite=overwrite)
             except com_error as e:
                 print('Couldn\'t find the Resolution sheet')
         
