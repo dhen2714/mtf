@@ -120,6 +120,10 @@ def get_excel_write_sheet():
 
 def get_overwrite_cells():
     return OVERWRITE_CELLS
+
+
+def get_write_mode():
+    return WRITE_MODE
     
 
 

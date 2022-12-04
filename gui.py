@@ -8,7 +8,7 @@ import pydicom
 from pywintypes import com_error
 from dicom_preprocess import preprocess_dicom
 from mtf import get_labelled_rois, calculate_mtf
-from application_parameters import get_sample_spacing, excel_write_cell, get_edge_locations, get_excel_write_sheet, get_overwrite_cells
+from application_parameters import get_sample_spacing, excel_write_cell, get_edge_locations, get_excel_write_sheet, get_overwrite_cells, get_write_mode
 import numpy as np
 from excel_write import excelkey2ind, write_values, get_active_app
 
@@ -155,6 +155,10 @@ class AppMTF(ttk.Frame):
                 write_sheet = get_excel_write_sheet()
                 overwrite = get_overwrite_cells()
                 sheet = self.excel_app.books[book_name].sheets[write_sheet]
+                if get_write_mode() == 'free':
+                    header_cell = (excel_cell[0] - 1, excel_cell[1])
+                    _, header_val = os.path.split(dcmpath)
+                    write_values(sheet, np.array([header_val]), header_cell, overwrite=overwrite)
                 write_values(sheet, write_array, excel_cell, overwrite=overwrite)
             except com_error as e:
                 print('Couldn\'t find the Resolution sheet')
