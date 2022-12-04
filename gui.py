@@ -19,18 +19,24 @@ class AppMTF(ttk.Frame):
         self.grid()
         self.drop_target_register(DND_FILES)
         self.dnd_bind('<<Drop>>', self.files_dropped)
-        ttk.Label(self, text='DICOM images to process:').grid(column=0, row=0)
+        ttk.Label(self, text='DICOM images to process:').grid(column=0, row=0, columnspan=2)
         self.dcm_queue = {}
         self.processing_book = None
         self.dcm_list = tk.Variable(value=[])
-        self.dcm_listbox = tk.Listbox(self, listvariable=self.dcm_list, width=30, height=10)
-        self.dcm_listbox.grid(column=0, row=1)
+        # self.dcm_listbox = tk.Listbox(self, listvariable=self.dcm_list, width=30, height=10)
+        self.dcm_listbox = tk.Listbox(self, listvariable=self.dcm_list, height=10, width=30)
+        self.dcm_listbox.grid(column=0, row=1, columnspan=2)
+
+        self.button_clear_all = tk.Button(self, text='Clear all', command=self.clear_queue)
+        self.button_clear_all.grid(column=0, row=2)
+        self.button_delete_selected = tk.Button(self, text='Delete selected', command=self.delete_selected)
+        self.button_delete_selected.grid(column=1, row=2)
 
         self.calculate_button = tk.Button(self, text='Calculate MTF', command=self.process_queue)
-        self.calculate_button.grid(column=0, row=2)
+        self.calculate_button.grid(column=0, row=3, columnspan=2)
 
         self.excel_label = ttk.Label(self, text='Open excel workbook:')
-        self.excel_label.grid(column=0, row=3)
+        self.excel_label.grid(column=0, row=4, columnspan=2)
 
         self.excel_app = get_active_app()
         self.workbook_options = ['No workbook selected.']
@@ -44,7 +50,7 @@ class AppMTF(ttk.Frame):
         self.open_excel_var.set(default_val)
 
         self.excel_option_menu = ttk.OptionMenu(self, self.open_excel_var, default_val, *self.workbook_options)
-        self.excel_option_menu.grid(column=0, row=4)
+        self.excel_option_menu.grid(column=0, row=5, columnspan=2)
         self.update_workbook_options()
 
     def update_workbook_options(self):
@@ -75,10 +81,20 @@ class AppMTF(ttk.Frame):
 
     def files_dropped(self, event):
         filestr = event.data
+        print(filestr)
         re_fpaths = re.compile('\{[^}^{]*\}')
-        fpaths = re.findall(re_fpaths, filestr)
-        fpaths = [fpath.strip('{}') for fpath in fpaths]
+        fpaths1 = re.findall(re_fpaths, filestr)
+        fpaths1 = [fpath.strip('{}') for fpath in fpaths1]
+        print(fpaths1)
+        fpaths2 = re.sub(re_fpaths, '', filestr)
+        fpaths2 = fpaths2.split()
+        print(fpaths2)
+        fpaths = fpaths1 + fpaths2
+        # fpaths = filestr.split()
 
+        print(fpaths)
+        # Only add a file to the queue if it is not already in queue.
+        fpaths = (fpath for fpath in fpaths if fpath not in self.dcm_queue.values())
         for fpath in fpaths:
             _, fname = os.path.split(fpath)
             self.dcm_queue[fname] = fpath
@@ -87,6 +103,20 @@ class AppMTF(ttk.Frame):
     def process_queue(self):
         for _, fpath in self.dcm_queue.items():
             self.process_image(fpath)
+
+    def delete_selected(self):
+        selected = self.dcm_listbox.curselection()
+        if selected:
+            selected_idx = selected[0]
+            selected_key = list(self.dcm_queue)[selected_idx]
+            self.dcm_queue.pop(selected_key)
+            self.dcm_listbox.delete(selected_idx)
+            print(self.dcm_queue)
+
+    def clear_queue(self):
+        self.dcm_queue = {}
+        self.dcm_listbox.delete(0, last=tk.END)
+        print(self.dcm_queue)
 
     def process_image(self, dcmpath):
         dcm = pydicom.dcmread(dcmpath)
@@ -132,7 +162,10 @@ class AppMTF(ttk.Frame):
 
 if __name__ == '__main__':
     root = tkdnd2.Tk()
+    root.title('MTF calculator')
+    root.geometry('250x350')
     app = AppMTF(root)
-    app.mainloop()
+    app.pack(expand=True)
+    root.mainloop()
 
 
