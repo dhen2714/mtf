@@ -104,6 +104,8 @@ def get_edge_locations(detected_edge_locations):
             edge_locations.append('top')
         elif 'bottom' in detected_edge_locations:
             edge_locations.append('bottom')
+    elif PROCESS_EDGES in ['left', 'right', 'top', 'bottom']:
+        edge_locations.append(PROCESS_EDGES)
     elif PROCESS_EDGES == 'all':
         edge_locations.extend(['left', 'right', 'top', 'bottom'])
 
