@@ -10,12 +10,16 @@ import numpy as np
 from sklearn.isotonic import IsotonicRegression
 
 
-def rescale_pixels(image: np.ndarray, new_max: float = 255, new_min: float = 0) -> np.ndarray:
+def rescale_pixels(
+    image: np.ndarray, new_max: float = 255, new_min: float = 0
+) -> np.ndarray:
     """
     Rescale pixel values in image.
     """
     old_max, old_min = image.max(), image.min()
-    new_image = (image-old_min)*((new_max - new_min)/(old_max - old_min)) + new_min
+    new_image = (image - old_min) * (
+        (new_max - new_min) / (old_max - old_min)
+    ) + new_min
     return new_image
 
 
@@ -23,7 +27,7 @@ def calculate_distance(v1: np.array, v2: np.array) -> float:
     """
     Calculates Euclidean distance between two vectors.
     """
-    return np.sqrt(np.sum((v1 - v2)**2))
+    return np.sqrt(np.sum((v1 - v2) ** 2))
 
 
 def bound_edge_tool(canny: np.ndarray) -> Tuple[int, int, int, int]:
@@ -40,7 +44,7 @@ def bound_edge_tool(canny: np.ndarray) -> Tuple[int, int, int, int]:
         if contour_length > max_len:
             max_len = contour_length
             contour_ind = i
-     
+
     mtfedge = contours[contour_ind]
     # Define rectangle around the MTF edge.
     # rect returns x,y,w,h where x,y are the column, row indices of top left corner
@@ -48,25 +52,42 @@ def bound_edge_tool(canny: np.ndarray) -> Tuple[int, int, int, int]:
     return cv2.boundingRect(mtfedge)
 
 
-def contourmid2roimid(contour_midpoint: np.array, canny: np.ndarray, edge_location: str, search_length: int) -> np.array:
+def contourmid2roimid(
+    contour_midpoint: np.array,
+    canny: np.ndarray,
+    edge_location: str,
+    search_length: int,
+) -> np.array:
     edge_slices = {
-        'left': canny[contour_midpoint[0], contour_midpoint[1]:contour_midpoint[1]+search_length],
-        'right': canny[contour_midpoint[0], contour_midpoint[1]-search_length:contour_midpoint[1]],
-        'top': canny[contour_midpoint[0]:contour_midpoint[0]+search_length, contour_midpoint[1]],
-        'bottom': canny[contour_midpoint[0]-search_length:contour_midpoint[0], contour_midpoint[1]],
+        "left": canny[
+            contour_midpoint[0],
+            contour_midpoint[1] : contour_midpoint[1] + search_length,
+        ],
+        "right": canny[
+            contour_midpoint[0],
+            contour_midpoint[1] - search_length : contour_midpoint[1],
+        ],
+        "top": canny[
+            contour_midpoint[0] : contour_midpoint[0] + search_length,
+            contour_midpoint[1],
+        ],
+        "bottom": canny[
+            contour_midpoint[0] - search_length : contour_midpoint[0],
+            contour_midpoint[1],
+        ],
     }
     slice_start = {
-        'left': np.array([contour_midpoint[0], contour_midpoint[1]]),
-        'right': np.array([contour_midpoint[0], contour_midpoint[1]-search_length]),
-        'top': np.array([contour_midpoint[0], contour_midpoint[1]]),
-        'bottom': np.array([contour_midpoint[0]-search_length, contour_midpoint[1]]),
+        "left": np.array([contour_midpoint[0], contour_midpoint[1]]),
+        "right": np.array([contour_midpoint[0], contour_midpoint[1] - search_length]),
+        "top": np.array([contour_midpoint[0], contour_midpoint[1]]),
+        "bottom": np.array([contour_midpoint[0] - search_length, contour_midpoint[1]]),
     }
     search_slice = edge_slices[edge_location]
-    local_idx = np.where(search_slice!=0)[0]
+    local_idx = np.where(search_slice != 0)[0]
     if local_idx.size > 0:
-        if edge_location in ['left', 'right']:
+        if edge_location in ["left", "right"]:
             roi_midpoint = slice_start[edge_location] + np.array([0, local_idx[0]])
-        elif edge_location in ['top', 'bottom']:
+        elif edge_location in ["top", "bottom"]:
             roi_midpoint = slice_start[edge_location] + np.array([local_idx[0], 0])
 
     return roi_midpoint
@@ -76,7 +97,7 @@ def get_roi_bounds(canny: np.ndarray) -> dict:
     """
     Get the indicies for the row and column bounds for edge ROIs.
 
-    Returns a dictionary with index entries for each edge. Each entry is a 
+    Returns a dictionary with index entries for each edge. Each entry is a
     a tuple of tuples, with the first tuple being the first and last row
     indices for the ROI, and the second tuple being the first and last
     column indices for the ROI. For example:
@@ -88,34 +109,40 @@ def get_roi_bounds(canny: np.ndarray) -> dict:
     x, y, w, h = bound_edge_tool(canny)
     # Get midpoint for each side
     contour_midpoints = {
-        'left': np.array([y, x]) + np.array([int(h/2), 0]),
-        'right': np.array([y, x]) + np.array([int(h/2), w]),
-        'top': np.array([y, x]) + np.array([0, int(w/2)]),
-        'bottom': np.array([y, x]) + np.array([h, int(w/2)])
+        "left": np.array([y, x]) + np.array([int(h / 2), 0]),
+        "right": np.array([y, x]) + np.array([int(h / 2), w]),
+        "top": np.array([y, x]) + np.array([0, int(w / 2)]),
+        "bottom": np.array([y, x]) + np.array([h, int(w / 2)]),
     }
     # If the edge is not found within search_length, assumes no edge.
     search_length = 100
 
     # Define heights for vertical and horizontal edge rois
-    height_ver = 0.7*h
-    height_hor = 0.8*h
-    
+    height_ver = 0.7 * h
+    height_hor = 0.8 * h
+
     # Define widths for vertical and horizontal edge rois
-    width_ver = 1.6*w
-    width_hor = 0.6*w
-    
+    width_ver = 1.6 * w
+    width_hor = 0.6 * w
+
     roi_bounds = {}
     # Search for edge tool midpoints from contour midpoints.
     for key, val in contour_midpoints.items():
         roi_midpoint = contourmid2roimid(val, canny, key, search_length)
-        if key in ['left', 'right']:
+        if key in ["left", "right"]:
             roi_height, roi_width = height_ver, width_ver
-        elif key in ['top', 'bottom']:
+        elif key in ["top", "bottom"]:
             roi_height, roi_width = height_hor, width_hor
 
         roi_bounds[key] = (
-            (int(roi_midpoint[0]-roi_height/2), int(roi_midpoint[0]+roi_height/2)),
-            (int(roi_midpoint[1]-roi_width/2), int(roi_midpoint[1]+roi_width/2))
+            (
+                int(roi_midpoint[0] - roi_height / 2),
+                int(roi_midpoint[0] + roi_height / 2),
+            ),
+            (
+                int(roi_midpoint[1] - roi_width / 2),
+                int(roi_midpoint[1] + roi_width / 2),
+            ),
         )
 
     return roi_bounds
@@ -124,20 +151,20 @@ def get_roi_bounds(canny: np.ndarray) -> dict:
 def get_rois(image: np.ndarray, roi_bounds):
     """
     Get rois from images defined by roi bounds.
-    
+
     roi_bounds is a dictionary containing keys and ((x1, x2), (y1, y2)) where
     x1/x2 are the row bounds and y1/y2 are the columns bounds.
     """
     rois = {}
     for key, val in roi_bounds.items():
         row_vals, col_vals = val
-        rois[key] = image[row_vals[0]:row_vals[1], col_vals[0]:col_vals[1]]
+        rois[key] = image[row_vals[0] : row_vals[1], col_vals[0] : col_vals[1]]
     return rois
 
 
 def fix_rois(roi_bounds, row_lim, col_lim):
     """
-    Resize ROIS to be symmetrical if they are too close to the edge of 
+    Resize ROIS to be symmetrical if they are too close to the edge of
     the image.
     """
     fixed_rois = {}
@@ -145,31 +172,36 @@ def fix_rois(roi_bounds, row_lim, col_lim):
         row_bounds, col_bounds = roi
         new_row_bounds = row_bounds
         new_col_bounds = col_bounds
-        
+
         if row_bounds[0] < 0:
-            new_row_bounds = (0, row_bounds[1]+row_bounds[0])
+            new_row_bounds = (0, row_bounds[1] + row_bounds[0])
         if row_bounds[1] >= row_lim:
             diff = row_bounds[1] - row_lim
-            new_row_bounds = (row_bounds[0]+diff, row_lim-1)
-            
+            new_row_bounds = (row_bounds[0] + diff, row_lim - 1)
+
         if col_bounds[0] < 0:
-            new_col_bounds = (0, col_bounds[1]+col_bounds[0])
+            new_col_bounds = (0, col_bounds[1] + col_bounds[0])
         if col_bounds[1] >= col_lim:
             diff = col_bounds[1] - col_lim
-            new_col_bounds = (col_bounds[0]+diff, col_lim-1)
-            
+            new_col_bounds = (col_bounds[0] + diff, col_lim - 1)
+
         new_bounds = (new_row_bounds, new_col_bounds)
 
         fixed_rois[roi_name] = new_bounds
     return fixed_rois
 
 
-def get_esf(roi, roi_canny=None, edge_direction='vertical', 
-    num_edge_samples=2048, supersample_factor=10):
+def get_esf(
+    roi,
+    roi_canny=None,
+    edge_direction="vertical",
+    num_edge_samples=2048,
+    supersample_factor=10,
+):
     """
     Get ESF from a ROI containing an edge.
     roi_canny is the edge-detected roi. If it is None, edge will be detected.
-    
+
     Returns ESF values and x (sample position) values.
     """
     # Detect edge if detected edge roi not provided.
@@ -177,43 +209,49 @@ def get_esf(roi, roi_canny=None, edge_direction='vertical',
         roi_canny = rescale_pixels(roi).astype(np.uint8)
         roi_canny = cv2.Canny(roi_canny, 100, 300)
 
-    if edge_direction == 'vertical':
+    if edge_direction == "vertical":
         xn, yn = roi.shape
-    elif edge_direction == 'horizontal':
+    elif edge_direction == "horizontal":
         roi = roi.T
         roi_canny = roi_canny.T
         xn, yn = roi.shape
 
     edge_coords = []
     for i in np.arange(xn):
-        yedge_pos = np.where(roi_canny[i, :]==roi_canny.max())[0][0]
+        yedge_pos = np.where(roi_canny[i, :] == roi_canny.max())[0][0]
         edge_coords.append([i, yedge_pos])
-    
+
     edge_coords = np.array(edge_coords)
-    
-    m, b = np.polyfit(edge_coords[:,0], edge_coords[:,1], 1)
-    
+
+    m, b = np.polyfit(edge_coords[:, 0], edge_coords[:, 1], 1)
+
     # Edge location subpixel
     x = np.arange(xn)
-    y = m*x + b
-    
-    # Create an image where each pixel value is the horizontal distance between 
+    y = m * x + b
+
+    # Create an image where each pixel value is the horizontal distance between
     # the pixel position and edge position for the pixels' respective rows.
     # Calculates distance from pixel centres.
-    meshrow = np.repeat(np.arange(yn).reshape(1,-1), xn, axis=0) + 0.5
+    meshrow = np.repeat(np.arange(yn).reshape(1, -1), xn, axis=0) + 0.5
     dists_horizontal = meshrow - y.reshape(-1, 1)
-    
-    dists_upsampled = dists_horizontal*supersample_factor
-    dists_upsampled = np.round(dists_upsampled)/supersample_factor
-    
-    sample_positions = np.linspace(-(num_edge_samples/2-1)/supersample_factor, 
-                                   (num_edge_samples/2)/supersample_factor+1/supersample_factor, num_edge_samples)
-    
+
+    dists_upsampled = dists_horizontal * supersample_factor
+    dists_upsampled = np.round(dists_upsampled) / supersample_factor
+
+    sample_positions = np.linspace(
+        -(num_edge_samples / 2 - 1) / supersample_factor,
+        (num_edge_samples / 2) / supersample_factor + 1 / supersample_factor,
+        num_edge_samples,
+    )
+
     esf = np.zeros(num_edge_samples)
-    
+
     for i, bin_val in enumerate(sample_positions):
-        esf[i] = roi[dists_upsampled==np.round(supersample_factor*bin_val)/supersample_factor].mean()
-        
+        esf[i] = roi[
+            dists_upsampled
+            == np.round(supersample_factor * bin_val) / supersample_factor
+        ].mean()
+
     return esf, sample_positions
 
 
@@ -222,11 +260,11 @@ def esf2mtf(esf, sample_period):
     Finite difference on esf and then FT.
     Returns MTF and frequencies.
     """
-    lsf = np.convolve(esf, [-1, 1], mode='valid')
-    lsf = np.append([lsf[0]], lsf) # Make the lsf same length as esf
-    
+    lsf = np.convolve(esf, [-1, 1], mode="valid")
+    lsf = np.append([lsf[0]], lsf)  # Make the lsf same length as esf
+
     LSF = fft(lsf)
-    MTF = np.abs(LSF)/np.abs(LSF).max()
+    MTF = np.abs(LSF) / np.abs(LSF).max()
     freqs = fftfreq(len(lsf), sample_period)
     return MTF, freqs
 
@@ -235,7 +273,7 @@ def monotone_esf(esf, sample_positions):
     """
     Applies monotonicity constraint to ESF to remove noise.
     """
-    isoreg = IsotonicRegression(increasing='auto').fit(sample_positions, esf)
+    isoreg = IsotonicRegression(increasing="auto").fit(sample_positions, esf)
     esf_new = isoreg.predict(sample_positions)
     return esf_new
 
@@ -245,9 +283,9 @@ def preprocess_dcm(dcm):
     Preprocesses DICOM image, returning a pixel array for MTF calculation.
     """
     manufacturer_name = dcm[0x0008, 0x0070].value.lower()
-    if 'hologic' in manufacturer_name:
+    if "hologic" in manufacturer_name:
         arr = preprocess_hologic(dcm)
-    elif 'ge' in manufacturer_name:
+    elif "ge" in manufacturer_name:
         arr = preprocess_ge(dcm)
     return arr
 
@@ -266,22 +304,22 @@ def autofocus_tomo(tomo_recon):
         if lapvar > max_lapvar:
             max_lapvar_slice = i
             max_lapvar = lapvar
-    return tomo_recon[max_lapvar_slice, ...]    
+    return tomo_recon[max_lapvar_slice, ...]
 
 
 def preprocess_hologic(dcm):
     img_type_header = dcm[0x0008, 0x0008].value
-    if 'TOMOSYNTHESIS' in img_type_header:
+    if "TOMOSYNTHESIS" in img_type_header:
         arr = autofocus_tomo(dcm.pixel_array)
     else:
         # Get value for (0018, 11a4) Paddle description
-        paddleval = dcm[0x0018,0x11a4].value
+        paddleval = dcm[0x0018, 0x11A4].value
         arr = dcm.pixel_array
-        if paddleval == '10CM MAG':
+        if paddleval == "10CM MAG":
             rowlims = (450, 2800)
         else:
             rowlims = (20, -20)
-        arr = arr[rowlims[0]:rowlims[1],:]
+        arr = arr[rowlims[0] : rowlims[1], :]
     return arr
 
 
@@ -312,16 +350,16 @@ def get_mtfs(dcm_path, sample_period):
     mtfs = {}
     for edge_pos in rois:
 
-        if edge_pos in ('left', 'right'):
-            edge_dir = 'vertical'
-        elif edge_pos in ('top', 'bottom'):
-            edge_dir = 'horizontal'
+        if edge_pos in ("left", "right"):
+            edge_dir = "vertical"
+        elif edge_pos in ("top", "bottom"):
+            edge_dir = "horizontal"
 
         edge_roi = rois[edge_pos]
         edge_roi_canny = rois_canny[edge_pos]
         esf, sample_positions = get_esf(edge_roi, edge_roi_canny, edge_dir)
-        esf = monotone_esf(esf, sample_positions) # Apply monotonicity constraint
-        MTF, freqs = esf2mtf(esf, sample_period/10)
+        esf = monotone_esf(esf, sample_positions)  # Apply monotonicity constraint
+        MTF, freqs = esf2mtf(esf, sample_period / 10)
 
         mtfs[edge_pos] = (freqs, MTF)
 
@@ -342,8 +380,9 @@ def get_labelled_rois(image):
     return rois, rois_canny
 
 
-def calculate_mtf(roi, sample_period, roi_canny=None, edge_dir='vertical', 
-    sample_number=None):
+def calculate_mtf(
+    roi, sample_period, roi_canny=None, edge_dir="vertical", sample_number=None
+):
     """
     Calculates MTF given ROI containing an edge.
     """
@@ -352,13 +391,10 @@ def calculate_mtf(roi, sample_period, roi_canny=None, edge_dir='vertical',
         roi_canny = cv2.Canny(roi_canny, 100, 300)
 
     esf, sample_positions = get_esf(roi, roi_canny, edge_dir)
-    esf = monotone_esf(esf, sample_positions) # Apply monotonicity constraint
-    MTF, freqs = esf2mtf(esf, sample_period/10)
+    esf = monotone_esf(esf, sample_positions)  # Apply monotonicity constraint
+    MTF, freqs = esf2mtf(esf, sample_period / 10)
 
     if not sample_number:
-        sample_number = int(len(MTF)/2)
-    
-    return freqs[:sample_number], MTF[:sample_number]
+        sample_number = int(len(MTF) / 2)
 
-    
-        
+    return freqs[:sample_number], MTF[:sample_number]
