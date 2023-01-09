@@ -30,7 +30,7 @@ def calculate_distance(v1: np.array, v2: np.array) -> float:
     return np.sqrt(np.sum((v1 - v2) ** 2))
 
 
-def bound_edge_tool(canny: np.ndarray) -> Tuple[int, int, int, int]:
+def bound_edge_tool(canny: np.ndarray) -> tuple[int, int, int, int]:
     """
     Return x, y, w, h, where x, y are the column, row indices of the top left
     corner of the bounding box around edge tool. w and h are the width and
@@ -95,7 +95,7 @@ def contourmid2roimid(
     return roi_midpoint
 
 
-def get_roi_bounds(canny: np.ndarray) -> dict:
+def get_roi_bounds(canny: np.ndarray) -> dict[tuple[tuple[int, int], tuple[int, int]]]:
     """
     Get the indicies for the row and column bounds for edge ROIs.
 
@@ -152,7 +152,9 @@ def get_roi_bounds(canny: np.ndarray) -> dict:
     return roi_bounds
 
 
-def get_rois(image: np.ndarray, roi_bounds):
+def get_rois(
+    image: np.ndarray, roi_bounds: dict[tuple[tuple[int, int], tuple[int, int]]]
+) -> dict[np.ndarray]:
     """
     Get rois from images defined by roi bounds.
 
@@ -176,7 +178,9 @@ def check_roi_size(row_bounds: Tuple[int, int], col_bounds: Tuple[int, int]) -> 
     return size_check
 
 
-def fix_rois(roi_bounds, row_lim, col_lim):
+def fix_rois(
+    roi_bounds: Tuple[Tuple[int, int], Tuple[int, int]], row_lim: int, col_lim: int
+) -> dict[tuple[tuple[int, int], tuple[int, int]]]:
     """
     Resize ROIS to be symmetrical if they are too close to the edge of
     the image.
