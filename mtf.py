@@ -89,6 +89,8 @@ def contourmid2roimid(
             roi_midpoint = slice_start[edge_location] + np.array([0, local_idx[0]])
         elif edge_location in ["top", "bottom"]:
             roi_midpoint = slice_start[edge_location] + np.array([local_idx[0], 0])
+    else:
+        roi_midpoint = None
 
     return roi_midpoint
 
@@ -109,13 +111,13 @@ def get_roi_bounds(canny: np.ndarray) -> dict:
     x, y, w, h = bound_edge_tool(canny)
     # Get midpoint for each side
     contour_midpoints = {
-        "left": np.array([y, x]) + np.array([int(h / 2), 0]),
-        "right": np.array([y, x]) + np.array([int(h / 2), w]),
-        "top": np.array([y, x]) + np.array([0, int(w / 2)]),
-        "bottom": np.array([y, x]) + np.array([h, int(w / 2)]),
+        "left": np.array([y, x]) + np.array([int((h - 1) / 2), 0]),
+        "right": np.array([y, x]) + np.array([int((h - 1) / 2), (w - 1)]),
+        "top": np.array([y, x]) + np.array([0, int((w - 1) / 2)]),
+        "bottom": np.array([y, x]) + np.array([(h - 1), int((w - 1) / 2)]),
     }
     # If the edge is not found within search_length, assumes no edge.
-    search_length = 100
+    search_length = 200
 
     # Define heights for vertical and horizontal edge rois
     height_ver = 0.7 * h
@@ -129,6 +131,8 @@ def get_roi_bounds(canny: np.ndarray) -> dict:
     # Search for edge tool midpoints from contour midpoints.
     for key, val in contour_midpoints.items():
         roi_midpoint = contourmid2roimid(val, canny, key, search_length)
+        if roi_midpoint is None:
+            continue
         if key in ["left", "right"]:
             roi_height, roi_width = height_ver, width_ver
         elif key in ["top", "bottom"]:
@@ -162,6 +166,16 @@ def get_rois(image: np.ndarray, roi_bounds):
     return rois
 
 
+def check_roi_size(row_bounds: Tuple[int, int], col_bounds: Tuple[int, int]) -> bool:
+    """
+    Returns True if the size of the ROI is greater than 100x100 pixels.
+    """
+    row_length = row_bounds[1] - row_bounds[0]
+    col_length = col_bounds[1] - col_bounds[0]
+    size_check = (row_length > 100) and (col_length > 100)
+    return size_check
+
+
 def fix_rois(roi_bounds, row_lim, col_lim):
     """
     Resize ROIS to be symmetrical if they are too close to the edge of
@@ -186,8 +200,8 @@ def fix_rois(roi_bounds, row_lim, col_lim):
             new_col_bounds = (col_bounds[0] + diff, col_lim - 1)
 
         new_bounds = (new_row_bounds, new_col_bounds)
-
-        fixed_rois[roi_name] = new_bounds
+        if check_roi_size(new_row_bounds, new_col_bounds):
+            fixed_rois[roi_name] = new_bounds
     return fixed_rois
 
 
@@ -366,7 +380,7 @@ def get_mtfs(dcm_path, sample_period):
     return mtfs
 
 
-def get_labelled_rois(image):
+def get_labelled_rois(image: np.ndarray) -> Tuple[dict, dict]:
     """
     Returns dictionary of labelled rois.
     """
