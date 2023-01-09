@@ -89,7 +89,6 @@ class AppMTF(ttk.Frame):
 
         self.update_option_menu()
         self.after(2000, self.update_workbook_options)
-        print(self.open_excel_var.get())
 
     def update_option_menu(self):
         """
@@ -183,6 +182,7 @@ class AppMTF(ttk.Frame):
                 if get_write_mode() == "free":
                     header_cell = (excel_cell[0] - 1, excel_cell[1])
                     _, header_val = os.path.split(dcmpath)
+                    header_val = f"{header_val}_{edge_position}"
                     write_values(
                         sheet, np.array([header_val]), header_cell, overwrite=overwrite
                     )
