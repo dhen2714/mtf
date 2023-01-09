@@ -28,7 +28,7 @@ def preprocess_hologic(dcm, data_dict):
     'conventional'.
     """
     img_type_header = dcm[0x0008, 0x0008].value
-    if 'TOMOSYNTHESIS' in img_type_header:
+    if 'TOMOSYNTHESIS' in img_type_header or 'VOLUME' in img_type_header:
         data_dict['mode'] = 'tomo'
         pixel_array = dcm.pixel_array
         tomo_slice = autofocus_tomo(pixel_array)
