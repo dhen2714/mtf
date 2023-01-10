@@ -15,7 +15,7 @@ def preprocess_dcm(dcm: FileDataset) -> np.ndarray:
     return arr
 
 
-def autofocus_tomo(tomo_recon):
+def autofocus_tomo(tomo_recon: np.ndarray) -> np.ndarray:
     """
     Find the tomosynthesis slice in which the MTF edge is in focus.
     Uses variance of Laplacian as a metric for focus.
@@ -32,9 +32,9 @@ def autofocus_tomo(tomo_recon):
     return tomo_recon[max_lapvar_slice, ...]
 
 
-def preprocess_hologic(dcm):
+def preprocess_hologic(dcm: FileDataset) -> np.ndarray:
     img_type_header = dcm[0x0008, 0x0008].value
-    if "TOMOSYNTHESIS" in img_type_header:
+    if "TOMOSYNTHESIS" in img_type_header or "VOLUME" in img_type_header:
         arr = autofocus_tomo(dcm.pixel_array)
     else:
         # Get value for (0018, 11a4) Paddle description
