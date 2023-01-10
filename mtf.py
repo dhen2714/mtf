@@ -253,7 +253,7 @@ def get_esf(
     # Detect edge if detected edge roi not provided.
     if roi_canny is None:
         roi_canny = rescale_pixels(roi).astype(np.uint8)
-        roi_canny = cv2.Canny(roi_canny, 100, 300)
+        roi_canny = cv2.Canny(roi_canny, 100, 400)
 
     if edge_direction == "vertical":
         xn, yn = roi.shape
@@ -385,7 +385,7 @@ def get_mtfs(
     img = rescale_pixels(cropped)
     img8bit = img.astype(np.uint8)
     # Perform edge detection
-    imgedge = cv2.Canny(img8bit, 100, 300)
+    imgedge = cv2.Canny(img8bit, 100, 400)
     # Get ROIs
     roi_bounds = get_roi_bounds(imgedge)
     roi_bounds = fix_rois(roi_bounds, *img.shape)
@@ -416,7 +416,7 @@ def get_labelled_rois(image: np.ndarray) -> tuple[dict, dict]:
     Returns dictionary of labelled rois.
     """
     image = rescale_pixels(image)
-    image_edge = cv2.Canny(image.astype(np.uint8), 100, 300)
+    image_edge = cv2.Canny(image.astype(np.uint8), 100, 400)
     # Get ROIs
     roi_bounds = get_roi_bounds(image_edge)
     roi_bounds = fix_rois(roi_bounds, *image.shape)
@@ -437,7 +437,7 @@ def calculate_mtf(
     """
     if roi_canny is None:
         roi_canny = rescale_pixels(roi).astype(np.uint8)
-        roi_canny = cv2.Canny(roi_canny, 100, 300)
+        roi_canny = cv2.Canny(roi_canny, 100, 400)
 
     esf, sample_positions = get_esf(roi, roi_canny, edge_dir)
     esf = monotone_esf(esf, sample_positions)  # Apply monotonicity constraint
