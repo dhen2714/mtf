@@ -7,6 +7,7 @@ import cv2
 import pydicom
 from pydicom.dataset import FileDataset
 from scipy.fft import fft, fftfreq
+from numba import njit, prange
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
 
@@ -210,6 +211,28 @@ def fix_rois(
     return fixed_rois
 
 
+@njit(parallel=True, fastmath=True)
+def rebin_calc_esf(
+    sample_positions: np.array, roi: np.ndarray, dists_upsampled: np.array
+) -> np.array:
+    """
+    Rebin ROI pixel values according to their distance from the edge.
+    Returns ESF.
+    Uses numba for faster looping.
+    """
+    # Flatten arrays as numba doesn't like 'complex' indexing.
+    roi = roi.flatten()
+    dists_upsampled = dists_upsampled.flatten()
+    n = len(sample_positions)
+    esf = np.zeros(n)
+    for i in prange(n):
+        bin_val = sample_positions[i]
+        inds = np.where(dists_upsampled == bin_val)[0]
+        esf[i] = roi[inds].mean()
+
+    return esf
+
+
 def get_esf(
     roi: np.ndarray,
     roi_canny: np.ndarray = None,
@@ -262,14 +285,11 @@ def get_esf(
         (num_edge_samples / 2) / supersample_factor + 1 / supersample_factor,
         num_edge_samples,
     )
+    sample_positions = (
+        np.round(supersample_factor * sample_positions) / supersample_factor
+    )
 
-    esf = np.zeros(num_edge_samples)
-
-    for i, bin_val in enumerate(sample_positions):
-        esf[i] = roi[
-            dists_upsampled
-            == np.round(supersample_factor * bin_val) / supersample_factor
-        ].mean()
+    esf = rebin_calc_esf(sample_positions, roi, dists_upsampled)
 
     return esf, sample_positions
 
