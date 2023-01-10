@@ -60,6 +60,10 @@ def contourmid2roimid(
     edge_location: str,
     search_length: int,
 ) -> np.array:
+    """
+    Searches for edge midpoint pixel along a 1D slice that includes the bounding box contour.
+    The edge midpoint will be the midpoint of the ROI for which the ESF is calculated.
+    """
     edge_slices = {
         "left": canny[
             contour_midpoint[0],
