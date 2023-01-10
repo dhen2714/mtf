@@ -1,3 +1,21 @@
+"""
+Functions to automatically draw regions of interest (ROIs) around the edges of
+the MTF edge tool in mammography.
+
+1) Performs Canny edge detection on entire image.
+2) Finds the contours in the edge detected image.
+3) Draws a bounding box around around the biggest contour, assumed to be the
+edge tool.
+4) Find the midpoints of the sides of the bounding box, from there finding the
+midpoints of each edge in pixel coordinates.
+5) Using the midpoints of each edge as the centre, define ROIs around the edge,
+with dimensions that depend on the size of the bounding box.
+6) The ROIs are labelled as 'left', 'right', 'top' or 'bottom'.
+
+The function get_labelled_rois returns two dictionaries, one with labelled ROIs
+extracted from the original image, and one with labelled ROIs from the edge-
+detected image. The edge-detected image is used to find the ESF.
+"""
 import cv2
 import numpy as np
 
