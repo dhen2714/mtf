@@ -2,9 +2,10 @@
 Algorithm based on Kao et al. (2005), 
 "A Software tool for measurement of the modulation transfer function"
 """
-from typing import Tuple
+from pathlib import Path
 import cv2
 import pydicom
+from pydicom.dataset import FileDataset
 from scipy.fft import fft, fftfreq
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
@@ -168,7 +169,7 @@ def get_rois(
     return rois
 
 
-def check_roi_size(row_bounds: Tuple[int, int], col_bounds: Tuple[int, int]) -> bool:
+def check_roi_size(row_bounds: tuple[int, int], col_bounds: tuple[int, int]) -> bool:
     """
     Returns True if the size of the ROI is greater than 100x100 pixels.
     """
@@ -179,7 +180,7 @@ def check_roi_size(row_bounds: Tuple[int, int], col_bounds: Tuple[int, int]) -> 
 
 
 def fix_rois(
-    roi_bounds: Tuple[Tuple[int, int], Tuple[int, int]], row_lim: int, col_lim: int
+    roi_bounds: tuple[tuple[int, int], tuple[int, int]], row_lim: int, col_lim: int
 ) -> dict[tuple[tuple[int, int], tuple[int, int]]]:
     """
     Resize ROIS to be symmetrical if they are too close to the edge of
@@ -210,12 +211,12 @@ def fix_rois(
 
 
 def get_esf(
-    roi,
-    roi_canny=None,
-    edge_direction="vertical",
-    num_edge_samples=2048,
-    supersample_factor=10,
-):
+    roi: np.ndarray,
+    roi_canny: np.ndarray = None,
+    edge_direction: str = "vertical",
+    num_edge_samples: int = 2048,
+    supersample_factor: int = 10,
+) -> tuple[np.array, np.array]:
     """
     Get ESF from a ROI containing an edge.
     roi_canny is the edge-detected roi. If it is None, edge will be detected.
@@ -296,7 +297,7 @@ def monotone_esf(esf, sample_positions):
     return esf_new
 
 
-def preprocess_dcm(dcm):
+def preprocess_dcm(dcm: FileDataset) -> np.ndarray:
     """
     Preprocesses DICOM image, returning a pixel array for MTF calculation.
     """
@@ -345,7 +346,9 @@ def preprocess_ge(dcm):
     return dcm.pixel_array
 
 
-def get_mtfs(dcm_path, sample_period):
+def get_mtfs(
+    dcm_path: str | Path, sample_period: float
+) -> dict[tuple[np.array, np.array]]:
     """
     Reads image, performs edge detection and returns MTF for all edges of tool.
     """
@@ -384,7 +387,7 @@ def get_mtfs(dcm_path, sample_period):
     return mtfs
 
 
-def get_labelled_rois(image: np.ndarray) -> Tuple[dict, dict]:
+def get_labelled_rois(image: np.ndarray) -> tuple[dict, dict]:
     """
     Returns dictionary of labelled rois.
     """
@@ -399,8 +402,12 @@ def get_labelled_rois(image: np.ndarray) -> Tuple[dict, dict]:
 
 
 def calculate_mtf(
-    roi, sample_period, roi_canny=None, edge_dir="vertical", sample_number=None
-):
+    roi: np.ndarray,
+    sample_period: float,
+    roi_canny: np.ndarray = None,
+    edge_dir: str = "vertical",
+    sample_number: int = None,
+) -> tuple[np.array, np.array]:
     """
     Calculates MTF given ROI containing an edge.
     """
