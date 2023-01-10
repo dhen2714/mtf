@@ -1,6 +1,9 @@
 """
 Algorithm based on Kao et al. (2005), 
 "A Software tool for measurement of the modulation transfer function"
+
+Drawing ROIs around the edges of the MTF tool is automated by the get_labelled_rois
+function.
 """
 from pathlib import Path
 import pydicom
@@ -94,7 +97,7 @@ def get_esf(
     return esf, sample_positions
 
 
-def esf2mtf(esf, sample_period):
+def esf2mtf(esf: np.array, sample_period: float) -> tuple[np.array, np.array]:
     """
     Finite difference on esf and then FT.
     Returns MTF and frequencies.
@@ -108,7 +111,7 @@ def esf2mtf(esf, sample_period):
     return MTF, freqs
 
 
-def monotone_esf(esf, sample_positions):
+def monotone_esf(esf: np.array, sample_positions: np.array) -> np.array:
     """
     Applies monotonicity constraint to ESF to remove noise.
     """
