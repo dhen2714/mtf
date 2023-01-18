@@ -200,7 +200,7 @@ def check_roi_size(row_bounds: tuple[int, int], col_bounds: tuple[int, int]) -> 
     """
     row_length = row_bounds[1] - row_bounds[0]
     col_length = col_bounds[1] - col_bounds[0]
-    size_check = (row_length > 100) and (col_length > 100)
+    size_check = (row_length > 205) and (col_length > 205)
     return size_check
 
 
