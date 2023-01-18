@@ -37,6 +37,26 @@ def rebin_calc_esf(
     return esf
 
 
+def get_edge_coordinates(
+    roi_canny: np.ndarray, num_edge_samples: int, supersample_factor: int
+) -> np.array:
+    num_rows, num_cols = roi_canny.shape
+    num_pixel_samples = np.ceil(num_edge_samples / supersample_factor)
+
+    col_mid = int(num_cols / 2)
+    edge_find_lower = col_mid - int(num_pixel_samples / 2)
+    edge_find_upper = col_mid + int(num_pixel_samples / 2)
+    edge_coords = []
+    for i in np.arange(num_rows):
+        yedge_pos = np.where(
+            roi_canny[i, edge_find_lower:edge_find_upper] == roi_canny.max()
+        )[0][0]
+        yedge_pos += edge_find_lower
+        edge_coords.append([i, yedge_pos])
+
+    return np.array(edge_coords)
+
+
 def get_esf(
     roi: np.ndarray,
     roi_canny: np.ndarray = None,
@@ -61,12 +81,7 @@ def get_esf(
         roi_canny = roi_canny.T
         xn, yn = roi.shape
 
-    edge_coords = []
-    for i in np.arange(xn):
-        yedge_pos = np.where(roi_canny[i, :] == roi_canny.max())[0][0]
-        edge_coords.append([i, yedge_pos])
-
-    edge_coords = np.array(edge_coords)
+    edge_coords = get_edge_coordinates(roi_canny, num_edge_samples, supersample_factor)
 
     m, b = np.polyfit(edge_coords[:, 0], edge_coords[:, 1], 1)
 
