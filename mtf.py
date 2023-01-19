@@ -6,13 +6,21 @@ Drawing ROIs around the edges of the MTF tool is automated by the get_labelled_r
 function.
 """
 from pathlib import Path
+from enum import Enum
 import pydicom
 from scipy.fft import fft, fftfreq
 from numba import njit, prange
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import HuberRegressor, LinearRegression, RANSACRegressor
 from .roifind import get_labelled_rois, detect_edge
 from .dcmutils import preprocess_dcm
+
+
+class Regressor(Enum):
+    linear = LinearRegression
+    ransac = RANSACRegressor
+    huber = HuberRegressor
 
 
 @njit(parallel=True, fastmath=True)
@@ -37,24 +45,22 @@ def rebin_calc_esf(
     return esf
 
 
-def get_edge_coordinates(
-    roi_canny: np.ndarray, num_edge_samples: int, supersample_factor: int
-) -> np.array:
-    num_rows, num_cols = roi_canny.shape
-    num_pixel_samples = np.ceil(num_edge_samples / supersample_factor)
+def get_edge_coordinates(roi_canny: np.ndarray) -> np.array:
+    num_rows, _ = roi_canny.shape
 
-    col_mid = int(num_cols / 2)
-    edge_find_lower = col_mid - int(num_pixel_samples / 2)
-    edge_find_upper = col_mid + int(num_pixel_samples / 2)
     edge_coords = []
     for i in np.arange(num_rows):
-        yedge_pos = np.where(
-            roi_canny[i, edge_find_lower:edge_find_upper] == roi_canny.max()
-        )[0][0]
-        yedge_pos += edge_find_lower
+        yedge_pos = np.where(roi_canny[i, :] == roi_canny.max())[0][0]
         edge_coords.append([i, yedge_pos])
 
     return np.array(edge_coords)
+
+
+def get_edge_subpixel(edge_coords: np.ndarray, regression_model: Regressor) -> np.array:
+    X = edge_coords[:, 0].reshape(-1, 1)
+    model = regression_model.value()
+    model.fit(X, edge_coords[:, 1])
+    return model.predict(X)
 
 
 def get_esf(
@@ -63,6 +69,7 @@ def get_esf(
     edge_direction: str = "vertical",
     num_edge_samples: int = 2048,
     supersample_factor: int = 10,
+    regressor: str = "ransac",
 ) -> tuple[np.array, np.array]:
     """
     Get ESF from a ROI containing an edge.
@@ -81,19 +88,14 @@ def get_esf(
         roi_canny = roi_canny.T
         xn, yn = roi.shape
 
-    edge_coords = get_edge_coordinates(roi_canny, num_edge_samples, supersample_factor)
-
-    m, b = np.polyfit(edge_coords[:, 0], edge_coords[:, 1], 1)
-
-    # Edge location subpixel
-    x = np.arange(xn)
-    y = m * x + b
+    edge_coords = get_edge_coordinates(roi_canny)
+    edge_subpixel = get_edge_subpixel(edge_coords, Regressor[regressor])
 
     # Create an image where each pixel value is the horizontal distance between
     # the pixel position and edge position for the pixels' respective rows.
     # Calculates distance from pixel centres.
     meshrow = np.repeat(np.arange(yn).reshape(1, -1), xn, axis=0) + 0.5
-    dists_horizontal = meshrow - y.reshape(-1, 1)
+    dists_horizontal = meshrow - edge_subpixel.reshape(-1, 1)
 
     dists_upsampled = dists_horizontal * supersample_factor
     dists_upsampled = np.round(dists_upsampled) / supersample_factor
@@ -177,6 +179,7 @@ def calculate_mtf(
 ) -> tuple[np.array, np.array]:
     """
     Calculates MTF given ROI containing an edge.
+    Returns frequencies and their corresponding MTF values as numpy arrays.
     """
     if roi_canny is None:
         roi_canny = detect_edge(roi)
