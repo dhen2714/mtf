@@ -35,15 +35,14 @@ def rescale_pixels(
 
 def detect_edge(image_array: np.ndarray) -> np.ndarray:
     image8bit = rescale_pixels(image_array).astype(np.uint8)
-    return cv2.Canny(image8bit, 100, 400)
+    return cv2.Canny(image8bit, 100, 300)
 
 
 def get_labelled_rois(image: np.ndarray) -> tuple[dict, dict]:
     """
     Returns dictionary of labelled rois.
     """
-    image = rescale_pixels(image)
-    image_edge = cv2.Canny(image.astype(np.uint8), 100, 400)
+    image_edge = detect_edge(image)
     # Get ROIs
     roi_bounds = get_roi_bounds(image_edge)
     roi_bounds = fix_rois(roi_bounds, *image.shape)
