@@ -42,12 +42,12 @@ def get_labelled_rois(image: np.ndarray) -> tuple[dict, dict]:
     """
     Returns dictionary of labelled rois.
     """
-    image_edge = detect_edge(image)
-    # Get ROIs
-    roi_bounds = get_roi_bounds(image_edge)
+    roi_bounds = get_roi_bounds(image)
     roi_bounds = fix_rois(roi_bounds, *image.shape)
     rois = get_rois(image, roi_bounds)
-    rois_canny = get_rois(image_edge, roi_bounds)
+    rois_canny = {}
+    for roi_name, roi in rois.items():
+        rois_canny[roi_name] = detect_edge(roi)
     return rois, rois_canny
 
 
@@ -120,7 +120,7 @@ def contourmid2roimid(
     return roi_midpoint
 
 
-def get_roi_bounds(canny: np.ndarray) -> dict[tuple[tuple[int, int], tuple[int, int]]]:
+def get_roi_bounds(image: np.ndarray) -> dict[tuple[tuple[int, int], tuple[int, int]]]:
     """
     Get the indicies for the row and column bounds for edge ROIs.
 
@@ -133,7 +133,10 @@ def get_roi_bounds(canny: np.ndarray) -> dict[tuple[tuple[int, int], tuple[int, 
         'right': ((row_start, row_end), (col_start, col_end))
     }
     """
-    x, y, w, h = bound_edge_tool(canny)
+    # Filter image to remove dead pixels, lines that may affect edge detection
+    image_filtered = cv2.medianBlur(image, 5)
+    edges_filtered = detect_edge(image_filtered)
+    x, y, w, h = bound_edge_tool(edges_filtered)
     # Get midpoint for each side
     contour_midpoints = {
         "left": np.array([y, x]) + np.array([int((h - 1) / 2), 0]),
@@ -141,6 +144,14 @@ def get_roi_bounds(canny: np.ndarray) -> dict[tuple[tuple[int, int], tuple[int, 
         "top": np.array([y, x]) + np.array([0, int((w - 1) / 2)]),
         "bottom": np.array([y, x]) + np.array([(h - 1), int((w - 1) / 2)]),
     }
+    contour_midpoints = {
+        "left": np.array([int((h - 1) / 2), 0]),
+        "right": np.array([int((h - 1) / 2), (w - 1)]),
+        "top": np.array([0, int((w - 1) / 2)]),
+        "bottom": np.array([(h - 1), int((w - 1) / 2)]),
+    }
+    bounded_area = image[y : y + h, x : x + w]
+    canny = detect_edge(bounded_area)
     # If the edge is not found within search_length, assumes no edge.
     search_length = 200
 
@@ -165,12 +176,12 @@ def get_roi_bounds(canny: np.ndarray) -> dict[tuple[tuple[int, int], tuple[int, 
 
         roi_bounds[key] = (
             (
-                int(roi_midpoint[0] - roi_height / 2),
-                int(roi_midpoint[0] + roi_height / 2),
+                y + int(roi_midpoint[0] - roi_height / 2),
+                y + int(roi_midpoint[0] + roi_height / 2),
             ),
             (
-                int(roi_midpoint[1] - roi_width / 2),
-                int(roi_midpoint[1] + roi_width / 2),
+                x + int(roi_midpoint[1] - roi_width / 2),
+                x + int(roi_midpoint[1] + roi_width / 2),
             ),
         )
 
