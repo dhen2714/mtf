@@ -58,12 +58,13 @@ def bound_edge_tool(canny: np.ndarray) -> tuple[int, int, int, int]:
     height of the box, respectively
     """
     contours, _ = cv2.findContours(canny, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    max_len = 0
+    max_area = 0
     # Assumes the biggest contour is the MTF tool.
     for i, c in enumerate(contours):
-        contour_length = len(c)
-        if contour_length > max_len:
-            max_len = contour_length
+        _, _, contour_width, contour_height = cv2.boundingRect(c)
+        contour_area = contour_width * contour_height
+        if contour_area > max_area:
+            max_area = contour_area
             contour_ind = i
 
     mtfedge = contours[contour_ind]
