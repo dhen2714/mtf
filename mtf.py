@@ -46,21 +46,45 @@ def rebin_calc_esf(
 
 
 def get_edge_coordinates(roi_canny: np.ndarray) -> np.array:
+    """
+    roi_canny: ROI output of detect_edge
+
+    Returns N x 2 array of row, column indices of edge locations.
+    If there are no gaps in the edge, N = roi_canny.shape[0], or the number of
+    rows in roi_canny.
+    """
     num_rows, _ = roi_canny.shape
 
     edge_coords = []
     for i in np.arange(num_rows):
-        yedge_pos = np.where(roi_canny[i, :] == roi_canny.max())[0][0]
-        edge_coords.append([i, yedge_pos])
+        try:
+            yedge_pos = np.where(roi_canny[i, :] == roi_canny.max())[0][0]
+            edge_coords.append([i, yedge_pos])
+        except IndexError:  # If there are gaps in the edge.
+            pass
 
     return np.array(edge_coords)
 
 
-def get_edge_subpixel(edge_coords: np.ndarray, regression_model: Regressor) -> np.array:
-    X = edge_coords[:, 0].reshape(-1, 1)
+def get_edge_subpixel(
+    detected_edge_coords: np.ndarray,
+    regression_model: Regressor,
+    edge_row_index: np.array,
+) -> np.array:
+    """
+    detected_edge_coords: N x 2 array (row, column)
+    regression_model: type of regressor, see Regressor class
+    edge_row_index: row indices to interpolate the subpixel edges to
+
+    edge_row_index may be different to detected_edge_coords[:, 0] if there are
+    gaps in the edge. The regressor will therefore still try to fit a line to
+    the edge as if the edge were continuous.
+    """
+    edge_row_index = edge_row_index.reshape(-1, 1)
+    X = detected_edge_coords[:, 0].reshape(-1, 1)
     model = regression_model.value()
-    model.fit(X, edge_coords[:, 1])
-    return model.predict(X)
+    model.fit(X, detected_edge_coords[:, 1])
+    return model.predict(edge_row_index)
 
 
 def get_esf(
@@ -89,7 +113,7 @@ def get_esf(
         xn, yn = roi.shape
 
     edge_coords = get_edge_coordinates(roi_canny)
-    edge_subpixel = get_edge_subpixel(edge_coords, Regressor[regressor])
+    edge_subpixel = get_edge_subpixel(edge_coords, Regressor[regressor], np.arange(xn))
 
     # Create an image where each pixel value is the horizontal distance between
     # the pixel position and edge position for the pixels' respective rows.
@@ -164,7 +188,6 @@ def get_mtfs(
         esf, sample_positions = get_esf(edge_roi, edge_roi_canny, edge_dir)
         esf = monotone_esf(esf, sample_positions)  # Apply monotonicity constraint
         MTF, freqs = esf2mtf(esf, sample_period / 10)
-
         mtfs[edge_pos] = (freqs, MTF)
 
     return mtfs
