@@ -5,6 +5,7 @@ Algorithm based on Kao et al. (2005),
 Drawing ROIs around the edges of the MTF tool is automated by the get_labelled_rois
 function.
 """
+
 from pathlib import Path
 from enum import Enum
 import pydicom
@@ -50,15 +51,15 @@ def get_edge_coordinates(roi_canny: np.ndarray) -> np.array:
     roi_canny: ROI output of detect_edge
 
     Returns N x 2 array of row, column indices of edge locations.
-    If there are no gaps in the edge, N = roi_canny.shape[0], or the number of
-    rows in roi_canny.
+    If there are no gaps in the edge, N = roi_canny.shape[1], or the number of
+    columns in roi_canny.
     """
-    num_rows, _ = roi_canny.shape
+    _, num_cols = roi_canny.shape
 
     edge_coords = []
-    for i in np.arange(num_rows):
+    for i in np.arange(num_cols):
         try:
-            yedge_pos = np.where(roi_canny[i, :] == roi_canny.max())[0][0]
+            yedge_pos = np.where(roi_canny[:, i] == roi_canny.max())[0][0]
             edge_coords.append([i, yedge_pos])
         except IndexError:  # If there are gaps in the edge.
             pass
@@ -69,22 +70,22 @@ def get_edge_coordinates(roi_canny: np.ndarray) -> np.array:
 def get_edge_subpixel(
     detected_edge_coords: np.ndarray,
     regression_model: Regressor,
-    edge_row_index: np.array,
+    edge_col_index: np.array,
 ) -> np.array:
     """
     detected_edge_coords: N x 2 array (row, column)
     regression_model: type of regressor, see Regressor class
-    edge_row_index: row indices to interpolate the subpixel edges to
+    edge_col_index: column indices to interpolate the subpixel edges to
 
-    edge_row_index may be different to detected_edge_coords[:, 0] if there are
+    edge_col_index may be different to detected_edge_coords[:, 0] if there are
     gaps in the edge. The regressor will therefore still try to fit a line to
     the edge as if the edge were continuous.
     """
-    edge_row_index = edge_row_index.reshape(-1, 1)
+    edge_col_index = edge_col_index.reshape(-1, 1)
     X = detected_edge_coords[:, 0].reshape(-1, 1)
     model = regression_model.value()
     model.fit(X, detected_edge_coords[:, 1])
-    return model.predict(edge_row_index)
+    return model.predict(edge_col_index)
 
 
 def get_esf(
@@ -93,7 +94,7 @@ def get_esf(
     edge_direction: str = "vertical",
     num_edge_samples: int = 2048,
     supersample_factor: int = 10,
-    regressor: str = "ransac",
+    regressor: str = "huber",
 ) -> tuple[np.array, np.array]:
     """
     Get ESF from a ROI containing an edge.
@@ -105,21 +106,21 @@ def get_esf(
     if roi_canny is None:
         roi_canny = detect_edge(roi)
 
-    if edge_direction == "vertical":
-        xn, yn = roi.shape
-    elif edge_direction == "horizontal":
+    if edge_direction == "horizontal":
+        yn, xn = roi.shape
+    elif edge_direction == "vertical":
         roi = roi.T
         roi_canny = roi_canny.T
-        xn, yn = roi.shape
+        yn, xn = roi.shape
 
     edge_coords = get_edge_coordinates(roi_canny)
     edge_subpixel = get_edge_subpixel(edge_coords, Regressor[regressor], np.arange(xn))
 
-    # Create an image where each pixel value is the horizontal distance between
-    # the pixel position and edge position for the pixels' respective rows.
+    # Create an image where each pixel value is the vertical distance between
+    # the pixel position and edge position for the pixels' respective columns.
     # Calculates distance from pixel centres.
-    meshrow = np.repeat(np.arange(yn).reshape(1, -1), xn, axis=0) + 0.5
-    dists_horizontal = meshrow - edge_subpixel.reshape(-1, 1)
+    meshcol = np.repeat(np.arange(yn).reshape(-1, 1), xn, axis=1) + 0.5
+    dists_horizontal = meshcol - edge_subpixel.reshape(1, -1)
 
     dists_upsampled = dists_horizontal * supersample_factor
     dists_upsampled = np.round(dists_upsampled) / supersample_factor
