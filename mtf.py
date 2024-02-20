@@ -120,9 +120,9 @@ def get_esf(
     # the pixel position and edge position for the pixels' respective columns.
     # Calculates distance from pixel centres.
     meshcol = np.repeat(np.arange(yn).reshape(-1, 1), xn, axis=1) + 0.5
-    dists_horizontal = meshcol - edge_subpixel.reshape(1, -1)
+    dists_from_edge = meshcol - edge_subpixel.reshape(1, -1)
 
-    dists_upsampled = dists_horizontal * supersample_factor
+    dists_upsampled = dists_from_edge * supersample_factor
     dists_upsampled = np.round(dists_upsampled) / supersample_factor
 
     sample_positions = np.linspace(
