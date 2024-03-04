@@ -8,6 +8,7 @@ function.
 
 from pathlib import Path
 from enum import Enum
+from dataclasses import dataclass
 import pydicom
 from scipy.fft import fft, fftfreq
 from numba import njit, prange
@@ -24,6 +25,42 @@ class Regressor(Enum):
     huber = HuberRegressor
 
 
+@dataclass
+class ESF:
+    x: np.array
+    esf: np.array
+    edge_angle: float = None  # angle in degrees
+    regression_method: str = None
+
+
+class MTF:
+    def __init__(
+        self, f: np.array, mtf: np.array, esf: ESF = None, lsf: np.array = None
+    ) -> None:
+        self._f = f
+        self._mtf = mtf
+        if esf:
+            self.esf = esf.esf
+            self.x = esf.x
+            self.edge_angle = esf.edge_angle
+            self.esf_regression_method = esf.regression_method
+        else:
+            self.esf = None
+            self.x = None
+            self.edge_angle = None
+            self.esf_regression_method = None
+        self.lsf = lsf
+        self.num_positive_samples = int(len(self._mtf) / 2)
+
+    @property
+    def f(self):
+        return self._f[: self.num_positive_samples]
+
+    @property
+    def mtf(self):
+        return self._mtf[: self.num_positive_samples]
+
+
 @njit(parallel=True, fastmath=True)
 def rebin_calc_esf(
     sample_positions: np.array, roi: np.ndarray, dists_upsampled: np.array
@@ -37,13 +74,13 @@ def rebin_calc_esf(
     roi = roi.flatten()
     dists_upsampled = dists_upsampled.flatten()
     n = len(sample_positions)
-    esf = np.zeros(n)
+    esf_array = np.zeros(n)
     for i in prange(n):
         bin_val = sample_positions[i]
         inds = np.where(dists_upsampled == bin_val)[0]
-        esf[i] = roi[inds].mean()
+        esf_array[i] = roi[inds].mean()
 
-    return esf
+    return esf_array
 
 
 def get_edge_coordinates(roi_canny: np.ndarray) -> np.array:
@@ -94,6 +131,7 @@ def get_esf(
     edge_direction: str = "vertical",
     num_edge_samples: int = 2048,
     supersample_factor: int = 10,
+    sample_period: float = 1,
     regressor: str = "huber",
 ) -> tuple[np.array, np.array]:
     """
@@ -116,6 +154,10 @@ def get_esf(
     edge_coords = get_edge_coordinates(roi_canny)
     edge_subpixel = get_edge_subpixel(edge_coords, Regressor[regressor], np.arange(xn))
 
+    # Calculate angle of edge
+    m = np.abs((edge_subpixel[-1] - edge_subpixel[0]) / xn)
+    theta = np.degrees(np.arctan(m))
+
     # Create an image where each pixel value is the vertical distance between
     # the pixel position and edge position for the pixels' respective columns.
     # Calculates distance from pixel centres.
@@ -136,29 +178,35 @@ def get_esf(
 
     esf = rebin_calc_esf(sample_positions, roi, dists_upsampled)
 
-    return esf, sample_positions
+    return ESF(sample_period * sample_positions, esf, theta, regressor)
 
 
-def esf2mtf(esf: np.array, sample_period: float) -> tuple[np.array, np.array]:
+def esf2mtf(esf: ESF) -> MTF:
     """
     Finite difference on esf and then FT.
     Returns MTF and frequencies.
     """
-    lsf = np.convolve(esf, [-1, 1], mode="valid")
+    lsf = np.convolve(esf.esf, [-1, 1], mode="valid")
     lsf = np.append([lsf[0]], lsf)  # Make the lsf same length as esf
 
     LSF = fft(lsf)
-    MTF = np.abs(LSF) / np.abs(LSF).max()
-    freqs = fftfreq(len(lsf), sample_period)
-    return MTF, freqs
+    mtf_array = np.abs(LSF) / np.abs(LSF).max()
+    freqs = fftfreq(len(lsf), esf.x[1] - esf.x[0])
+    return MTF(freqs, mtf_array, esf, lsf)
 
 
-def monotone_esf(esf: np.array, sample_positions: np.array) -> np.array:
+def monotone_esf(esf: ESF) -> np.array:
     """
     Applies monotonicity constraint to ESF to remove noise.
     """
-    isoreg = IsotonicRegression(increasing="auto").fit(sample_positions, esf)
-    esf_new = isoreg.predict(sample_positions)
+    isoreg = IsotonicRegression(increasing="auto").fit(esf.x, esf.esf)
+    esf_new_array = isoreg.predict(esf.x)
+    esf_new = ESF(
+        esf.x,
+        esf_new_array,
+        edge_angle=esf.edge_angle,
+        regression_method=esf.regression_method,
+    )
     return esf_new
 
 
@@ -186,10 +234,10 @@ def get_mtfs(
 
         edge_roi = rois[edge_pos]
         edge_roi_canny = rois_canny[edge_pos]
-        esf, sample_positions = get_esf(edge_roi, edge_roi_canny, edge_dir)
-        esf = monotone_esf(esf, sample_positions)  # Apply monotonicity constraint
-        MTF, freqs = esf2mtf(esf, sample_period / 10)
-        mtfs[edge_pos] = (freqs, MTF)
+        esf = get_esf(edge_roi, edge_roi_canny, edge_dir, sample_period=sample_period)
+        esf = monotone_esf(esf)  # Apply monotonicity constraint
+        mtf = esf2mtf(esf)
+        mtfs[edge_pos] = mtf
 
     return mtfs
 
@@ -199,8 +247,7 @@ def calculate_mtf(
     sample_period: float,
     roi_canny: np.ndarray = None,
     edge_dir: str = "vertical",
-    sample_number: int = None,
-) -> tuple[np.array, np.array]:
+) -> MTF:
     """
     Calculates MTF given ROI containing an edge.
     Returns frequencies and their corresponding MTF values as numpy arrays.
@@ -208,11 +255,7 @@ def calculate_mtf(
     if roi_canny is None:
         roi_canny = detect_edge(roi)
 
-    esf, sample_positions = get_esf(roi, roi_canny, edge_dir)
-    esf = monotone_esf(esf, sample_positions)  # Apply monotonicity constraint
-    MTF, freqs = esf2mtf(esf, sample_period / 10)
+    esf = get_esf(roi, roi_canny, edge_dir, sample_period=sample_period)
+    esf = monotone_esf(esf)  # Apply monotonicity constraint
 
-    if not sample_number:
-        sample_number = int(len(MTF) / 2)
-
-    return freqs[:sample_number], MTF[:sample_number]
+    return esf2mtf(esf)
