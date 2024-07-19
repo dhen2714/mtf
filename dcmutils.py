@@ -1,21 +1,36 @@
 from pydicom.dataset import FileDataset
 import cv2
 import numpy as np
+from dataclasses import dataclass
 
 
-def preprocess_dcm(dcm: FileDataset) -> np.ndarray:
+@dataclass
+class MammoMTFImage:
+    """Container class for preprocessed mammo MTF edge images."""
+
+    array: np.ndarray  # 2D pixel array
+    acquisition: str = "conventional"  # "conventional", "tomo", "mag"
+    manufacturer: str = None
+    orientation: str = "left"  # "left" means that the chest wall is on the right
+    focus_plane: str = None  # for tomo, the slice number corresponding to 2D array
+
+
+def preprocess_dcm(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
     """
     Preprocesses DICOM image, returning a pixel array for MTF calculation.
     """
     manufacturer_name = dcm[0x0008, 0x0070].value.lower()
     if "hologic" in manufacturer_name:
-        arr = preprocess_hologic(dcm)
-    elif "ge" in manufacturer_name:
-        arr = preprocess_ge(dcm)
-    return arr
+        return preprocess_hologic(dcm, acquisition=acquisition)
+    elif "fuji" in manufacturer_name:
+        return preprocess_fuji(dcm, acquisition=acquisition)
+    else:
+        return preprocess_ge(dcm, acquisition=acquisition)
 
 
-def autofocus_tomo(tomo_recon: np.ndarray) -> np.ndarray:
+def autofocus_tomo(
+    tomo_recon: np.ndarray, manufacturer: str = None, orientation: str = None
+) -> np.ndarray:
     """
     Find the tomosynthesis slice in which the MTF edge is in focus.
     Uses variance of Laplacian as a metric for focus.
@@ -29,24 +44,64 @@ def autofocus_tomo(tomo_recon: np.ndarray) -> np.ndarray:
         if lapvar > max_lapvar:
             max_lapvar_slice = i
             max_lapvar = lapvar
-    return tomo_recon[max_lapvar_slice, ...]
+    array2d = tomo_recon[max_lapvar_slice, ...]
+    return MammoMTFImage(array2d, "tomo", manufacturer, orientation, max_lapvar_slice)
 
 
-def preprocess_hologic(dcm: FileDataset) -> np.ndarray:
-    img_type_header = dcm[0x0008, 0x0008].value
-    if "TOMOSYNTHESIS" in img_type_header or "VOLUME" in img_type_header:
-        arr = autofocus_tomo(dcm.pixel_array)
-    else:
-        # Get value for (0018, 11a4) Paddle description
-        paddleval = dcm[0x0018, 0x11A4].value
-        arr = dcm.pixel_array
-        if paddleval == "10CM MAG":
-            rowlims = (450, 2800)
+def preprocess_hologic(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
+    arr = dcm.pixel_array
+    if not acquisition:
+        img_type_header = dcm[0x0008, 0x0008].value
+        if "TOMOSYNTHESIS" in img_type_header or "VOLUME" in img_type_header:
+            mtf_image = autofocus_tomo(arr, manufacturer="hologic", orientation="left")
         else:
-            rowlims = (20, -20)
-        arr = arr[rowlims[0] : rowlims[1], :]
-    return arr
+            # Get value for (0018, 11a4) Paddle description
+            paddleval = dcm[0x0018, 0x11A4].value
+            if paddleval == "10CM MAG":
+                mtf_image = _preprocess_hologic_mag(arr)
+            else:
+                mtf_image = _preprocess_hologic_conventional(arr)
+    elif acquisition == "conventional":
+        mtf_image = _preprocess_hologic_conventional(arr)
+    elif acquisition == "mag":
+        mtf_image = _preprocess_hologic_mag(arr)
+    elif acquisition == "tomo":
+        mtf_image = _preprocess_hologic_tomo(arr)
+    else:
+        raise ValueError(
+            "acquisition should be either None, 'conventional', 'mag' or 'tomo'"
+        )
+
+    return mtf_image
 
 
-def preprocess_ge(dcm):
-    return dcm.pixel_array
+def _preprocess_hologic_conventional(pixel_array: np.ndarray) -> MammoMTFImage:
+    rowlims = (20, -20)
+    pixel_array = pixel_array[rowlims[0] : rowlims[1], :]
+    return MammoMTFImage(
+        pixel_array, acquisition="conventional", manufacturer="hologic"
+    )
+
+
+def _preprocess_hologic_mag(pixel_array: np.ndarray) -> MammoMTFImage:
+    rowlims = (450, 2800)
+    pixel_array = pixel_array[rowlims[0] : rowlims[1], :]
+    return MammoMTFImage(pixel_array, acquisition="mag", manufacturer="hologic")
+
+
+def _preprocess_hologic_tomo(pixel_array: np.ndarray) -> MammoMTFImage:
+    return autofocus_tomo(pixel_array, manufacturer="hologic", orientation="left")
+
+
+def preprocess_fuji(dcm: FileDataset, acquisition: str = None) -> np.ndarray:
+    arr = dcm.pixel_array
+    return MammoMTFImage(
+        arr, manufacturer="fuji", acquisition="conventional", orientation="right"
+    )
+
+
+def preprocess_ge(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
+    arr = dcm.pixel_array
+    return MammoMTFImage(
+        arr, manufacturer="ge", acquisition="conventional", orientation="right"
+    )
