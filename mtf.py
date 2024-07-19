@@ -220,7 +220,7 @@ def get_mtfs(
     # The collimator is visible on the edge of Hologic images, remove.
     # For magnification images, remove the paddle.
     # For tomo, find in-focus slice.
-    cropped = preprocess_dcm(dcm)
+    cropped = preprocess_dcm(dcm).array
     # Get the ROIs around the edges of the imaged MTF tool.
     rois, rois_canny = get_labelled_rois(cropped)
 
