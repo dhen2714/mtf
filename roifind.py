@@ -16,6 +16,7 @@ The function get_labelled_rois returns two dictionaries, one with labelled ROIs
 extracted from the original image, and one with labelled ROIs from the edge-
 detected image. The edge-detected image is used to find the ESF.
 """
+
 import cv2
 import numpy as np
 
@@ -38,6 +39,16 @@ def detect_edge(image_array: np.ndarray) -> np.ndarray:
     return cv2.Canny(image8bit, 100, 300)
 
 
+def detect_edge_with_outlier_replacement(image_array: np.ndarray) -> np.ndarray:
+    masked_array = image_array.copy()
+    mu, sigma = image_array.mean(), image_array.std()
+    mask = np.where(
+        (image_array < (mu - 2.5 * sigma)) | (image_array > (mu + 2.5 * sigma))
+    )
+    masked_array[mask] = mu
+    return detect_edge(masked_array)
+
+
 def get_labelled_rois(image: np.ndarray) -> tuple[dict, dict]:
     """
     Returns dictionary of labelled rois.
@@ -47,7 +58,7 @@ def get_labelled_rois(image: np.ndarray) -> tuple[dict, dict]:
     rois = get_rois(image, roi_bounds)
     rois_canny = {}
     for roi_name, roi in rois.items():
-        rois_canny[roi_name] = detect_edge(roi)
+        rois_canny[roi_name] = detect_edge_with_outlier_replacement(roi)
     return rois, rois_canny
 
 
