@@ -58,6 +58,7 @@ def get_labelled_rois(image: np.ndarray) -> tuple[dict, dict]:
     rois = get_rois(image, roi_bounds)
     rois_canny = {}
     for roi_name, roi in rois.items():
+        # Especially bright pixels can break edge detection
         rois_canny[roi_name] = detect_edge_with_outlier_replacement(roi)
     return rois, rois_canny
 
