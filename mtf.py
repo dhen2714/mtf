@@ -15,7 +15,7 @@ from numba import njit, prange
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import HuberRegressor, LinearRegression, RANSACRegressor
-from .roifind import get_labelled_rois, detect_edge
+from .roifind import get_labelled_rois, detect_edge_with_outlier_replacement
 from .dcmutils import preprocess_dcm
 
 
@@ -142,7 +142,7 @@ def get_esf(
     """
     # Detect edge if detected edge roi not provided.
     if roi_canny is None:
-        roi_canny = detect_edge(roi)
+        roi_canny = detect_edge_with_outlier_replacement(roi)
 
     if edge_direction == "horizontal":
         yn, xn = roi.shape
@@ -253,7 +253,7 @@ def calculate_mtf(
     Returns frequencies and their corresponding MTF values as numpy arrays.
     """
     if roi_canny is None:
-        roi_canny = detect_edge(roi)
+        roi_canny = detect_edge_with_outlier_replacement(roi)
 
     esf = get_esf(roi, roi_canny, edge_dir, sample_period=sample_period)
     esf = monotone_esf(esf)  # Apply monotonicity constraint
