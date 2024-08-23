@@ -24,8 +24,10 @@ def preprocess_dcm(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
         return preprocess_hologic(dcm, acquisition=acquisition)
     elif "fuji" in manufacturer_name:
         return preprocess_fuji(dcm, acquisition=acquisition)
-    else:
+    elif "ge" in manufacturer_name:
         return preprocess_ge(dcm, acquisition=acquisition)
+    else:
+        raise ValueError(f"Image from unsupported manufacturer: {manufacturer_name}")
 
 
 def autofocus_tomo(
@@ -93,11 +95,33 @@ def _preprocess_hologic_tomo(pixel_array: np.ndarray) -> MammoMTFImage:
     return autofocus_tomo(pixel_array, manufacturer="hologic", orientation="left")
 
 
+def linearise_fuji(pixel_array: np.ndarray) -> np.ndarray:
+    lin = 10 ** ((pixel_array / 4 - 2047) / 1024)
+    rescaled = lin * 2**12 / lin.max()
+    return rescaled.astype(np.uint16)
+
+
 def preprocess_fuji(dcm: FileDataset, acquisition: str = None) -> np.ndarray:
     arr = dcm.pixel_array
-    return MammoMTFImage(
-        arr, manufacturer="fuji", acquisition="conventional", orientation="right"
-    )
+    if not acquisition:
+        img_type_header = dcm[0x0008, 0x0008].value
+        if "TOMOSYNTHESIS" in img_type_header or "VOLUME" in img_type_header:
+            mtf_image = autofocus_tomo(arr, manufacturer="fuji", orientation="right")
+        else:
+            arr = linearise_fuji(arr)
+            paddlevel = dcm[0x0018, 0x11A4].value
+            if "MAG" in paddlevel:
+                mtf_image = MammoMTFImage(
+                    arr, acquisition="mag", manufacturer="fuji", orientation="right"
+                )
+            else:
+                mtf_image = MammoMTFImage(
+                    arr,
+                    acquisition="conventional",
+                    manufacturer="fuji",
+                    orientation="right",
+                )
+    return mtf_image
 
 
 def preprocess_ge(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
