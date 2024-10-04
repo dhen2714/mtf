@@ -12,6 +12,7 @@ class MammoMTFImage:
     acquisition: str = "conventional"  # "conventional", "tomo", "mag"
     manufacturer: str = None
     orientation: str = "left"  # "left" means that the chest wall is on the right
+    pixel_spacing: float = None
     focus_plane: str = None  # for tomo, the slice number corresponding to 2D array
 
 
@@ -31,7 +32,10 @@ def preprocess_dcm(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
 
 
 def autofocus_tomo(
-    tomo_recon: np.ndarray, manufacturer: str = None, orientation: str = None
+    tomo_recon: np.ndarray,
+    manufacturer: str = None,
+    orientation: str = None,
+    pixel_spacing: float = None,
 ) -> np.ndarray:
     """
     Find the tomosynthesis slice in which the MTF edge is in focus.
@@ -47,7 +51,28 @@ def autofocus_tomo(
             max_lapvar_slice = i
             max_lapvar = lapvar
     array2d = tomo_recon[max_lapvar_slice, ...]
-    return MammoMTFImage(array2d, "tomo", manufacturer, orientation, max_lapvar_slice)
+    return MammoMTFImage(
+        array2d, "tomo", manufacturer, orientation, pixel_spacing, max_lapvar_slice
+    )
+
+
+def get_pixel_spacing(dcm: FileDataset) -> float:
+    tagval = dcm.get((0x0018, 0x1164), None)
+    try:
+        tagval = float(tagval[0])
+    except Exception:
+        tagval = None
+    return tagval
+
+
+def get_pixel_spacing_tomo(dcm: FileDataset) -> float:
+    try:
+        dcm_slice_sequence = dcm[(0x5200, 0x9230)]
+        dcm_element = dcm_slice_sequence[0][(0x0028, 0x9110)]
+        pixel_spacing = float(dcm_element[0][(0x0028, 0x0030)].value[0])
+    except Exception:
+        pixel_spacing = None
+    return pixel_spacing
 
 
 def preprocess_hologic(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
@@ -55,20 +80,30 @@ def preprocess_hologic(dcm: FileDataset, acquisition: str = None) -> MammoMTFIma
     if not acquisition:
         img_type_header = dcm[0x0008, 0x0008].value
         if "TOMOSYNTHESIS" in img_type_header or "VOLUME" in img_type_header:
-            mtf_image = autofocus_tomo(arr, manufacturer="hologic", orientation="left")
+            pixel_spacing = get_pixel_spacing_tomo(dcm)
+            mtf_image = autofocus_tomo(
+                arr,
+                manufacturer="hologic",
+                orientation="left",
+                pixel_spacing=pixel_spacing,
+            )
         else:
             # Get value for (0018, 11a4) Paddle description
             paddleval = dcm[0x0018, 0x11A4].value
+            pixel_spacing = get_pixel_spacing(dcm)
             if paddleval == "10CM MAG":
-                mtf_image = _preprocess_hologic_mag(arr)
+                mtf_image = _preprocess_hologic_mag(arr, pixel_spacing)
             else:
-                mtf_image = _preprocess_hologic_conventional(arr)
+                mtf_image = _preprocess_hologic_conventional(arr, pixel_spacing)
     elif acquisition == "conventional":
-        mtf_image = _preprocess_hologic_conventional(arr)
+        pixel_spacing = get_pixel_spacing(dcm)
+        mtf_image = _preprocess_hologic_conventional(arr, pixel_spacing)
     elif acquisition == "mag":
-        mtf_image = _preprocess_hologic_mag(arr)
+        pixel_spacing = get_pixel_spacing(dcm)
+        mtf_image = _preprocess_hologic_mag(arr, pixel_spacing)
     elif acquisition == "tomo":
-        mtf_image = _preprocess_hologic_tomo(arr)
+        pixel_spacing = get_pixel_spacing_tomo(dcm)
+        mtf_image = _preprocess_hologic_tomo(arr, pixel_spacing)
     else:
         raise ValueError(
             "acquisition should be either None, 'conventional', 'mag' or 'tomo'"
@@ -77,22 +112,41 @@ def preprocess_hologic(dcm: FileDataset, acquisition: str = None) -> MammoMTFIma
     return mtf_image
 
 
-def _preprocess_hologic_conventional(pixel_array: np.ndarray) -> MammoMTFImage:
+def _preprocess_hologic_conventional(
+    pixel_array: np.ndarray, pixel_spacing: float = None
+) -> MammoMTFImage:
     rowlims = (20, -20)
     pixel_array = pixel_array[rowlims[0] : rowlims[1], :]
     return MammoMTFImage(
-        pixel_array, acquisition="conventional", manufacturer="hologic"
+        pixel_array,
+        acquisition="conventional",
+        manufacturer="hologic",
+        pixel_spacing=pixel_spacing,
     )
 
 
-def _preprocess_hologic_mag(pixel_array: np.ndarray) -> MammoMTFImage:
+def _preprocess_hologic_mag(
+    pixel_array: np.ndarray, pixel_spacing: float = None
+) -> MammoMTFImage:
     rowlims = (450, 2800)
     pixel_array = pixel_array[rowlims[0] : rowlims[1], :]
-    return MammoMTFImage(pixel_array, acquisition="mag", manufacturer="hologic")
+    return MammoMTFImage(
+        pixel_array,
+        acquisition="mag",
+        manufacturer="hologic",
+        pixel_spacing=pixel_spacing,
+    )
 
 
-def _preprocess_hologic_tomo(pixel_array: np.ndarray) -> MammoMTFImage:
-    return autofocus_tomo(pixel_array, manufacturer="hologic", orientation="left")
+def _preprocess_hologic_tomo(
+    pixel_array: np.ndarray, pixel_spacing: float = None
+) -> MammoMTFImage:
+    return autofocus_tomo(
+        pixel_array,
+        manufacturer="hologic",
+        orientation="left",
+        pixel_spacing=pixel_spacing,
+    )
 
 
 def linearise_fuji(pixel_array: np.ndarray) -> np.ndarray:
@@ -106,13 +160,24 @@ def preprocess_fuji(dcm: FileDataset, acquisition: str = None) -> np.ndarray:
     if not acquisition:
         img_type_header = dcm[0x0008, 0x0008].value
         if "TOMOSYNTHESIS" in img_type_header or "VOLUME" in img_type_header:
-            mtf_image = autofocus_tomo(arr, manufacturer="fuji", orientation="right")
+            pixel_spacing = get_pixel_spacing_tomo(dcm)
+            mtf_image = autofocus_tomo(
+                arr,
+                manufacturer="fuji",
+                orientation="right",
+                pixel_spacing=pixel_spacing,
+            )
         else:
             arr = linearise_fuji(arr)
             paddlevel = dcm[0x0018, 0x11A4].value
+            pixel_spacing = get_pixel_spacing(dcm)
             if "MAG" in paddlevel:
                 mtf_image = MammoMTFImage(
-                    arr, acquisition="mag", manufacturer="fuji", orientation="right"
+                    arr,
+                    acquisition="mag",
+                    manufacturer="fuji",
+                    orientation="right",
+                    pixel_spacing=pixel_spacing,
                 )
             else:
                 mtf_image = MammoMTFImage(
@@ -120,12 +185,18 @@ def preprocess_fuji(dcm: FileDataset, acquisition: str = None) -> np.ndarray:
                     acquisition="conventional",
                     manufacturer="fuji",
                     orientation="right",
+                    pixel_spacing=pixel_spacing,
                 )
     return mtf_image
 
 
 def preprocess_ge(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
     arr = dcm.pixel_array
+    pixel_spacing = get_pixel_spacing(dcm)
     return MammoMTFImage(
-        arr, manufacturer="ge", acquisition="conventional", orientation="right"
+        arr,
+        manufacturer="ge",
+        acquisition="conventional",
+        orientation="right",
+        pixel_spacing=pixel_spacing,
     )
