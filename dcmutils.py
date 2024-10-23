@@ -158,10 +158,16 @@ def linearise_fuji(pixel_array: np.ndarray) -> np.ndarray:
 def _preprocess_fuji_mag(
     pixel_array: np.ndarray, pixel_spacing: float = None
 ) -> MammoMTFImage:
-    # Image bounds taken for Fuji amulet system.
-    row_start, row_end = 418, 1930
-    col_start, col_end = 0, 1452
+    # There is a border of saturated pixels around the mag image
+    max_val = 2**14 - 1  # 14 bit images
+    # Only take pixels that aren't saturated, with a small border
+    image_indices = np.where(pixel_array != max_val)
+    row_start = image_indices[0][0] + 20
+    row_end = image_indices[0][-1] - 20
+    col_start = image_indices[1][0] + 20
+    col_end = image_indices[1][-1] - 20
     pixel_array = pixel_array[row_start:row_end, col_start:col_end]
+    pixel_array = linearise_fuji(pixel_array)
     return MammoMTFImage(
         pixel_array,
         acquisition="mag",
@@ -184,7 +190,7 @@ def preprocess_fuji(dcm: FileDataset, acquisition: str = None) -> np.ndarray:
                 pixel_spacing=pixel_spacing,
             )
         else:
-            arr = linearise_fuji(arr)
+
             paddlevel = dcm[0x0018, 0x11A4].value
             pixel_spacing = get_pixel_spacing(dcm)
             if "MAG" in paddlevel:
@@ -192,6 +198,7 @@ def preprocess_fuji(dcm: FileDataset, acquisition: str = None) -> np.ndarray:
                     pixel_array=arr, pixel_spacing=pixel_spacing
                 )
             else:
+                arr = linearise_fuji(arr)
                 mtf_image = MammoMTFImage(
                     arr,
                     acquisition="conventional",
