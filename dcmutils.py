@@ -8,10 +8,10 @@ from dataclasses import dataclass
 class MammoMTFImage:
     """Container class for preprocessed mammo MTF edge images."""
 
-    array: np.ndarray  # 2D pixel array
+    array: np.ndarray  # 2D pixel array, or 'focus plane' image for tomo
     acquisition: str = "conventional"  # "conventional", "tomo", "mag"
     manufacturer: str = None
-    orientation: str = "left"  # "left" means that the chest wall is on the right
+    orientation: str = "left"  # "left" means chest wall is on the right of DICOM image
     pixel_spacing: float = None
     focus_plane: str = None  # for tomo, the slice number corresponding to 2D array
 
@@ -162,10 +162,11 @@ def _preprocess_fuji_mag(
     max_val = 2**14 - 1  # 14 bit images
     # Only take pixels that aren't saturated, with a small border
     image_indices = np.where(pixel_array != max_val)
-    row_start = image_indices[0][0] + 20
-    row_end = image_indices[0][-1] - 20
-    col_start = image_indices[1][0] + 20
-    col_end = image_indices[1][-1] - 20
+    border_px = 20
+    row_start = image_indices[0][0] + border_px
+    row_end = image_indices[0][-1] - border_px
+    col_start = image_indices[1][0] + border_px
+    col_end = image_indices[1][-1] - border_px
     pixel_array = pixel_array[row_start:row_end, col_start:col_end]
     pixel_array = linearise_fuji(pixel_array)
     return MammoMTFImage(
