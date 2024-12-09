@@ -1,0 +1,2 @@
+class ESFAngleError(Exception):
+    pass
