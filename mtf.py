@@ -15,6 +15,7 @@ from numba import njit, prange
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import HuberRegressor, LinearRegression, RANSACRegressor
+from .errors import ESFAngleError
 from .roifind import get_labelled_rois, detect_edge_with_outlier_replacement
 from .dcmutils import preprocess_dcm
 
@@ -157,6 +158,8 @@ def get_esf(
     # Calculate angle of edge
     m = np.abs((edge_subpixel[-1] - edge_subpixel[0]) / xn)
     theta = np.degrees(np.arctan(m))
+    if np.isclose(theta, 0):
+        raise ESFAngleError("Edge angle found to be close to 0 degrees.")
 
     # Create an image where each pixel value is the vertical distance between
     # the pixel position and edge position for the pixels' respective columns.
