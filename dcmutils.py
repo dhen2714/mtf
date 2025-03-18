@@ -25,6 +25,8 @@ def preprocess_dcm(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
         return preprocess_hologic(dcm, acquisition=acquisition)
     elif "fuji" in manufacturer_name:
         return preprocess_fuji(dcm, acquisition=acquisition)
+    elif "siemens" in manufacturer_name:
+        return preprocess_siemens(dcm, acquisition=acquisition)
     elif "ge" in manufacturer_name:
         return preprocess_ge(dcm, acquisition=acquisition)
     else:
@@ -63,6 +65,14 @@ def get_pixel_spacing(dcm: FileDataset) -> float:
     except Exception:
         tagval = None
     return tagval
+
+
+def get_orientation(dcm: FileDataset) -> str:
+    tagval = dcm.get((0x0020, 0x0020), None)
+    # tagval is something like [P, R] or [A, L].
+    orientation_val = tagval[1]
+    orientation_dict = {"L": "left", "R": "right"}
+    return orientation_dict[orientation_val]
 
 
 def get_pixel_spacing_tomo(dcm: FileDataset) -> float:
@@ -146,6 +156,59 @@ def _preprocess_hologic_tomo(
         manufacturer="hologic",
         orientation="left",
         pixel_spacing=pixel_spacing,
+    )
+
+
+def preprocess_siemens(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
+    arr = dcm.pixel_array
+    orientation = get_orientation(dcm)
+    if not acquisition:
+        # Get value for (0018, 11a4) Detector Mode
+        detector_mode = dcm[0x0018, 0x7008].value
+        pixel_spacing = get_pixel_spacing(dcm)
+        if detector_mode == "MAGNIFICATION":
+            mtf_image = _preprocess_siemens_mag(arr, pixel_spacing, orientation)
+        else:
+            mtf_image = _preprocess_siemens_conventional(
+                arr, pixel_spacing, orientation
+            )
+    elif acquisition == "conventional":
+        pixel_spacing = get_pixel_spacing(dcm)
+        mtf_image = _preprocess_siemens_conventional(arr, pixel_spacing, orientation)
+    elif acquisition == "mag":
+        pixel_spacing = get_pixel_spacing(dcm)
+        mtf_image = _preprocess_siemens_mag(arr, pixel_spacing, orientation)
+    else:
+        raise ValueError(
+            "Siemens acquisition should be either None, 'conventional' or 'mag'"
+        )
+
+    return mtf_image
+
+
+def _preprocess_siemens_conventional(
+    pixel_array: np.ndarray, pixel_spacing: float, orientation: str
+) -> MammoMTFImage:
+    rowlims = (100, -100)
+    pixel_array = pixel_array[rowlims[0] : rowlims[1], :]
+    return MammoMTFImage(
+        pixel_array,
+        acquisition="conventional",
+        manufacturer="siemens",
+        pixel_spacing=pixel_spacing,
+        orientation=orientation,
+    )
+
+
+def _preprocess_siemens_mag(
+    arr: np.ndarray, pixel_spacing: float, orientation: str
+) -> MammoMTFImage:
+    return MammoMTFImage(
+        arr,
+        acquisition="mag",
+        manufacturer="siemens",
+        pixel_spacing=pixel_spacing,
+        orientation=orientation,
     )
 
 
