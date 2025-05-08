@@ -34,19 +34,27 @@ def rescale_pixels(
     return new_image
 
 
-def detect_edge(image_array: np.ndarray) -> np.ndarray:
+def detect_edge(
+    image_array: np.ndarray,
+    canny_lower_thresh: int = 100,
+    canny_upper_thresh: int = 300,
+) -> np.ndarray:
     image8bit = rescale_pixels(image_array).astype(np.uint8)
-    return cv2.Canny(image8bit, 100, 300)
+    return cv2.Canny(image8bit, canny_lower_thresh, canny_upper_thresh)
 
 
-def detect_edge_with_outlier_replacement(image_array: np.ndarray) -> np.ndarray:
+def detect_edge_with_outlier_replacement(
+    image_array: np.ndarray,
+    canny_lower_thresh: int = 100,
+    canny_upper_thresh: int = 300,
+) -> np.ndarray:
     masked_array = image_array.copy()
     mu, sigma = image_array.mean(), image_array.std()
     mask = np.where(
         (image_array < (mu - 2.5 * sigma)) | (image_array > (mu + 2.5 * sigma))
     )
     masked_array[mask] = mu
-    return detect_edge(masked_array)
+    return detect_edge(masked_array, canny_lower_thresh, canny_upper_thresh)
 
 
 def get_labelled_rois(image: np.ndarray) -> tuple[dict, dict]:
