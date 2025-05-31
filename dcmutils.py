@@ -14,7 +14,7 @@ except ImportError:
 
 def get_tomo_array(dcm: FileDataset) -> np.ndarray:
     if TOMODD_AVAILABLE:
-        arr = decompress(dcm.filename)
+        arr = decompress(str(dcm.filename))
     else:
         arr = dcm.pixel_array
     return arr
