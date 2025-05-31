@@ -3,6 +3,22 @@ import cv2
 import numpy as np
 from dataclasses import dataclass
 
+try:
+    from tomodd import decompress
+
+    # https://github.com/dhen2714/tomo-decompressor
+    TOMODD_AVAILABLE = True
+except ImportError:
+    TOMODD_AVAILABLE = False
+
+
+def get_tomo_array(dcm: FileDataset) -> np.ndarray:
+    if TOMODD_AVAILABLE:
+        arr = decompress(dcm.filename)
+    else:
+        arr = dcm.pixel_array
+    return arr
+
 
 @dataclass
 class MammoMTFImage:
@@ -86,10 +102,10 @@ def get_pixel_spacing_tomo(dcm: FileDataset) -> float:
 
 
 def preprocess_hologic(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
-    arr = dcm.pixel_array
     if not acquisition:
         img_type_header = dcm[0x0008, 0x0008].value
         if "TOMOSYNTHESIS" in img_type_header or "VOLUME" in img_type_header:
+            arr = get_tomo_array(dcm)
             pixel_spacing = get_pixel_spacing_tomo(dcm)
             mtf_image = autofocus_tomo(
                 arr,
@@ -98,6 +114,7 @@ def preprocess_hologic(dcm: FileDataset, acquisition: str = None) -> MammoMTFIma
                 pixel_spacing=pixel_spacing,
             )
         else:
+            arr = dcm.pixel_array
             # Get value for (0018, 11a4) Paddle description
             paddleval = dcm[0x0018, 0x11A4].value
             pixel_spacing = get_pixel_spacing(dcm)
@@ -106,12 +123,15 @@ def preprocess_hologic(dcm: FileDataset, acquisition: str = None) -> MammoMTFIma
             else:
                 mtf_image = _preprocess_hologic_conventional(arr, pixel_spacing)
     elif acquisition == "conventional":
+        arr = dcm.pixel_array
         pixel_spacing = get_pixel_spacing(dcm)
         mtf_image = _preprocess_hologic_conventional(arr, pixel_spacing)
     elif acquisition == "mag":
+        arr = dcm.pixel_array
         pixel_spacing = get_pixel_spacing(dcm)
         mtf_image = _preprocess_hologic_mag(arr, pixel_spacing)
     elif acquisition == "tomo":
+        arr = get_tomo_array(dcm)
         pixel_spacing = get_pixel_spacing_tomo(dcm)
         mtf_image = _preprocess_hologic_tomo(arr, pixel_spacing)
     else:
