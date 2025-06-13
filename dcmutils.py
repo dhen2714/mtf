@@ -7,6 +7,7 @@ try:
     from tomodd import decompress
 
     # https://github.com/dhen2714/tomo-decompressor
+    print("Using tomodd decompressor")
     TOMODD_AVAILABLE = True
 except ImportError:
     TOMODD_AVAILABLE = False
