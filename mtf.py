@@ -1,5 +1,5 @@
 """
-Algorithm based on Kao et al. (2005), 
+Algorithm based on Kao et al. (2005),
 "A Software tool for measurement of the modulation transfer function"
 
 Drawing ROIs around the edges of the MTF tool is automated by the get_labelled_rois
@@ -9,8 +9,10 @@ function.
 from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass
+import warnings
 import pydicom
 from scipy.fft import fft, fftfreq
+from scipy.interpolate import interp1d
 from numba import njit, prange
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
@@ -18,6 +20,87 @@ from sklearn.linear_model import HuberRegressor, LinearRegression, RANSACRegress
 from .errors import ESFAngleError
 from .roifind import get_labelled_rois, detect_edge_with_outlier_replacement
 from .dcmutils import preprocess_dcm
+
+
+def get_cutoff_frequency(
+    spatial_frequencies: np.array,
+    mtf_values: np.array,
+    cutoff_point: float,
+    mtf_threshold: float = 0.01,
+) -> float:
+    """
+    Finds the cutoff frequency at a specified MTF value using interpolation,
+    considering only MTF values up to the point where it first drops below a threshold.
+
+    Parameters
+    ----------
+    spatial_frequencies : np.array
+        1D array of spatial frequency values (assumed to be sorted).
+        mtf_values (np.array): 1D array of corresponding MTF values
+        (assumed to be sorted according to spatial frequencies).
+    cutoff_point : float
+        The MTF value at which to find the cutoff frequency (e.g., 0.5 for 50%).
+    mtf_threshold : float
+        The minimum MTF value to consider for interpolation.
+        Data points after the MTF first drops below this threshold
+        will be excluded. Defaults to 0.01.
+
+    Returns
+    -------
+    float or None
+        The cutoff frequency at the specified MTF value, or None if the
+        cutoff point is outside the relevant range of MTF values.
+    """
+    # Find the index of the first occurrence where MTF drops below the threshold
+    below_threshold_index = np.argmax(mtf_values < mtf_threshold)
+
+    # If MTF never drops below the threshold, use the entire array
+    if below_threshold_index == 0 and not (mtf_values < mtf_threshold).any():
+        valid_indices = np.arange(len(mtf_values))
+    else:
+        valid_indices = np.arange(
+            below_threshold_index + 1
+        )  # Include the point where it drops below
+
+    if len(valid_indices) < 2:
+        warnings.warn(
+            f"The first MTF value is already below the threshold of {mtf_threshold}.",
+            UserWarning,
+        )
+        return None
+
+    # Use only the spatial frequencies and MTF values up to the threshold point
+    valid_spatial_frequencies = spatial_frequencies[valid_indices]
+    valid_mtf_values = mtf_values[valid_indices]
+
+    # Create an interpolation function using the filtered data
+    interpolation_function = interp1d(
+        valid_mtf_values,
+        valid_spatial_frequencies,
+        bounds_error=False,
+        fill_value="extrapolate",
+    )
+
+    # Find the cutoff frequency using the interpolation function
+    cutoff_frequency = interpolation_function(cutoff_point)
+
+    # Check if the cutoff point was within the filtered MTF range
+    if (cutoff_point < np.min(valid_mtf_values)) or (
+        cutoff_point > np.max(valid_mtf_values)
+    ):
+        cutoff_warning_message = (
+            f"The cutoff point of {cutoff_point} is outside"
+            + "the range of filtered MTF values (down to"
+            + " first occurrence below {mtf_threshold}). "
+            + "The returned cutoff frequency might be an "
+            + "extrapolation based on the filtered data."
+        )
+        warnings.warn(
+            cutoff_warning_message,
+            UserWarning,
+        )
+
+    return cutoff_frequency
 
 
 class Regressor(Enum):
@@ -58,8 +141,19 @@ class MTF:
         return self._f[: self.num_positive_samples]
 
     @property
+    def f50(self):
+        return get_cutoff_frequency(self.f, self.mtf, 0.5, 0.49)
+
+    @property
+    def f10(self):
+        return get_cutoff_frequency(self.f, self.mtf, 0.1, 0.09)
+
+    @property
     def mtf(self):
         return self._mtf[: self.num_positive_samples]
+
+    def get_cutoff(self, cutoff_point, mtf_threshold: float = 0.09) -> float:
+        return get_cutoff_frequency(self.f, self.mtf, cutoff_point, mtf_threshold)
 
 
 @njit(parallel=True, fastmath=True)
