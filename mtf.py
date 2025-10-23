@@ -344,6 +344,7 @@ def calculate_mtf(
     sample_period: float,
     roi_canny: np.ndarray = None,
     edge_dir: str = "vertical",
+    esf_conditioning: bool = True,
 ) -> MTF:
     """
     Calculates MTF given ROI containing an edge.
@@ -353,6 +354,7 @@ def calculate_mtf(
         roi_canny = detect_edge_with_outlier_replacement(roi)
 
     esf = get_esf(roi, roi_canny, edge_dir, sample_period=sample_period)
-    esf = monotone_esf(esf)  # Apply monotonicity constraint
+    if esf_conditioning:
+        esf = monotone_esf(esf)  # Apply monotonicity constraint
 
     return esf2mtf(esf)
