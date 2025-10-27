@@ -148,6 +148,12 @@ def _preprocess_hologic_conventional(
 ) -> MammoMTFImage:
     rowlims = (20, -20)
     pixel_array = pixel_array[rowlims[0] : rowlims[1], :]
+    # For edge cases where there are still saturated pixels that haven't been clipped.
+    max_pix_val = 2**14 - 1
+    med_pix_val = np.median(pixel_array)
+    satured_pixels = pixel_array == max_pix_val
+    pixel_array[satured_pixels] = med_pix_val
+
     return MammoMTFImage(
         pixel_array,
         acquisition="conventional",
