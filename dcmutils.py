@@ -300,13 +300,57 @@ def preprocess_fuji(dcm: FileDataset, acquisition: str = None) -> np.ndarray:
     return mtf_image
 
 
-def preprocess_ge(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
-    arr = dcm.pixel_array
-    pixel_spacing = get_pixel_spacing(dcm)
+def _get_ge_acquisition_mode(dcm: FileDataset) -> str:
+    header_val = dcm.get(
+        (0x0018, 0x1114), None
+    ).value  # Estimated Radiographic Magnification
+    mag_ratio = float(header_val)
+    if mag_ratio >= 1.5:
+        acquisition = "mag"
+    else:
+        acquisition = "conventional"
+    return acquisition
+
+
+def _preprocess_ge_mag(
+    arr: np.ndarray, pixel_spacing: float, orientation: str
+) -> MammoMTFImage:
+    mag_crop = arr[225:2070, :1320]
+    return MammoMTFImage(
+        mag_crop,
+        acquisition="mag",
+        manufacturer="ge",
+        orientation=orientation,
+        pixel_spacing=pixel_spacing,
+    )
+
+
+def _preprocess_ge_conventional(
+    arr: np.ndarray, pixel_spacing: float, orientation: str
+) -> MammoMTFImage:
     return MammoMTFImage(
         arr,
         manufacturer="ge",
         acquisition="conventional",
-        orientation="right",
+        orientation=orientation,
         pixel_spacing=pixel_spacing,
     )
+
+
+def preprocess_ge(dcm: FileDataset, acquisition: str = None) -> MammoMTFImage:
+    arr = dcm.pixel_array
+    if arr.ndim > 2:
+        raise ValueError("Tomo reconstructions not supported.")
+
+    if acquisition is None:
+        acquisition = _get_ge_acquisition_mode(dcm)
+
+    pixel_spacing = get_pixel_spacing(dcm)
+    orientation = get_orientation(dcm)
+
+    if acquisition == "mag":
+        mtf_image = _preprocess_ge_mag(arr, pixel_spacing, orientation)
+    else:
+        mtf_image = _preprocess_ge_conventional(arr, pixel_spacing, orientation)
+
+    return mtf_image
