@@ -308,7 +308,9 @@ def monotone_esf(esf: ESF) -> np.array:
 
 
 def get_mtfs(
-    dcm_path: str | Path, sample_period: float
+    dcm_path: str | Path,
+    sample_period: float,
+    esf_conditioning: bool = True,
 ) -> dict[tuple[np.array, np.array]]:
     """
     Reads image, performs edge detection and returns MTF for all edges of tool.
@@ -332,7 +334,8 @@ def get_mtfs(
         edge_roi = rois[edge_pos]
         edge_roi_canny = rois_canny[edge_pos]
         esf = get_esf(edge_roi, edge_roi_canny, edge_dir, sample_period=sample_period)
-        esf = monotone_esf(esf)  # Apply monotonicity constraint
+        if esf_conditioning:
+            esf = monotone_esf(esf)  # Apply monotonicity constraint
         mtf = esf2mtf(esf)
         mtfs[edge_pos] = mtf
 
